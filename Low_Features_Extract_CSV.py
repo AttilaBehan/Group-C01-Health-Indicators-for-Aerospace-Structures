@@ -4,14 +4,14 @@ import numpy as np
 import os 
 
 #Load MAT file
-filename=r"C:\Users\attil\OneDrive\TU_Delft\Project_SHM\Signals_LW1000Int1000Cycle.mat"
+filename=#INPUT FILE, format in the following way: r"file path"
 file = mat73.loadmat(filename)
 
 #Define Columns/Attributes
 Attributes = ['Time', 'Amplitude', 'Rise-Time', 'Energy', 'Counts', 'Duration', 'RMS']
 
 #Define output directory
-output_dir = r"C:\Users\attil\OneDrive\TU_Delft\Project_SHM\Low_Features_CSV"
+output_dir =#OUTPUT FILE, format in the following way: r"file path"
 os.makedirs(output_dir, exist_ok=True)  # Ensure output directory exists, else create it
 
 #Extract signals
