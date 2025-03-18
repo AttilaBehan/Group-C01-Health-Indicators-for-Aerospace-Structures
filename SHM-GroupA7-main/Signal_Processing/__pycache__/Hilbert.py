@@ -1,9 +1,14 @@
 import numpy as np
 #import tftb
-from scipy.signal import hilbert, chirp, gaussian
+from scipy.signal import hilbert, chirp
+from scipy.signal.windows import gaussian
 import pandas as pd
 import matplotlib.pyplot as plt
 from math import pi
+
+''' SORRY THIS SCRIPT IS RLLY MESSY, JUST TRYING STUFF OUT, DON'T USE THIS FOR ANYTHING'''
+
+
 
 def wvd(x, fs):
     """
@@ -19,10 +24,18 @@ def wvd(x, fs):
     time = np.arange(N) / fs
 
     # Wigner-Ville distribution computation
-    for t in range(N):
-        for tau in range(-t, N-t):
-            W[t, tau] = np.sum(x[t + tau] * np.conj(x[t - tau]) * np.exp(-2j * np.pi * fs * tau))
+    # for t in range(N):
+    #     for tau in range(-t, N-t):
+    #         W[t, tau] = np.sum(x[t + tau] * np.conj(x[t - tau]) * np.exp(-2j * np.pi * fs * tau))
     
+    for t in range(N):
+        for tau in range(-N//2, N//2):
+            t_plus_tau = t + tau
+            t_minus_tau = t - tau
+
+            if 0 <= t_plus_tau < N and 0 <= t_minus_tau < N:
+                W[t, tau % N] = x[t_plus_tau] * np.conj(x[t_minus_tau]) * np.exp(-2j * np.pi * fs * tau)
+
     return W
 
 def spwvd(x, fs, time_smoothing=10, freq_smoothing=10):
