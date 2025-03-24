@@ -87,7 +87,7 @@ from scipy.fft import fft, fftfreq
 import matplotlib.pyplot as plt
 
 # Load your data
-data = pd.read_csv(r"C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample1.csv")  # Assuming your CSV has 'cycle' and 'amplitude'
+data = pd.read_csv(r"C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV_interp\Sample1Interp.csv")  # Assuming your CSV has 'cycle' and 'amplitude'
 
 # Ensure that the data is sorted by cycle number (if not already sorted)
 data = data.sort_values(by='Time')
@@ -109,11 +109,8 @@ complete_data = pd.merge(complete_data, data, on='Time', how='left')
 # Interpolate missing amplitude values (linear interpolation)
 complete_data['Amplitude'] = complete_data['Amplitude'].interpolate(method='linear')
 
-# Check the result
-print(complete_data.head())
-
 # Function to compute FFT
-def compute_fft(data, sampling_rate=800):
+def compute_fft(data, sampling_rate=3.61):
     N = len(data)  # Number of data points
     T = 1.0 / sampling_rate  # Sampling interval
     xf = fftfreq(N, T)[:N//2]  # Frequency bins
