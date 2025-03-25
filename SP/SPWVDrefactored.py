@@ -1,8 +1,21 @@
+import sys
+import os
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from Feature_Extraction import CSV_to_Array
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import hilbert, chirp
 from scipy.signal.windows import gaussian
 from scipy.ndimage import convolve1d
+
+print('Reading CSV file')
+sample_amplitude, sample_risetime, sample_energy, sample_counts, sample_duration, sample_rms = CSV_to_Array('SP\\LowLevelFeaturesSample1.csv')
+
+sample_amplitude = sample_amplitude[:2000]
+sample_duration = sample_duration[150:2000]
+sample_energy = sample_energy[:7002]
+print('Data collected')
 
 '''
 Not own work, put own code into chatgpt and got my code improved:
@@ -118,55 +131,74 @@ def spwvd_simple(signal, fs, time_smoothing=15, freq_smoothing=15):
 fs = 1000
 t = np.linspace(0, 1, fs)
 x = chirp(t, f0=100, f1=400, t1=1, method='quadratic') + chirp(t, f0=350, f1=50, t1=1, method='quadratic')
-print('signal', x)
+#print('signal', x)
 N = len(x)
 freqs = np.linspace(0, fs, N)
 
 # SPWVD Matrices
-spwvd_matrix_v1 = spwvd(x, fs, time_smoothing=20, freq_smoothing=20)
-magnitude = np.abs(spwvd_matrix_v1)
-spwvd_matrix_v2 = spwvd_simple(x, fs, time_smoothing=20, freq_smoothing=20)
-wvd_matrix = wvd(x, fs)
+# spwvd_matrix_v1 = spwvd(x, fs, time_smoothing=20, freq_smoothing=20)
+# magnitude = np.abs(spwvd_matrix_v1)
+# spwvd_matrix_v2 = spwvd_simple(x, fs, time_smoothing=20, freq_smoothing=20)
+# wvd_matrix = wvd(x, fs)
+
+# Try real data
+print('Starting SPWVD...')
+fs_Sample1 = len(sample_energy)/2931*2
+spwvd_Sample1 = spwvd(sample_energy, fs_Sample1, time_smoothing=20, freq_smoothing=15)
+magnitude_Sample1 = np.abs(spwvd_Sample1)
+print('SPWVD completed')
 
 # Features
 
-# --- Instat=ntaneous energy over time ---
-energy_over_time = magnitude.sum(axis=1)
+# # --- Instat=ntaneous energy over time ---
+# energy_over_time = magnitude.sum(axis=1)
 
-# --- Instantaneous Frequency (energy-weighted mean frequency) ---
-weighted_freq = (magnitude * freqs[np.newaxis, :]).sum(axis=1) / (energy_over_time + 1e-10)
+# # --- Instantaneous Frequency (energy-weighted mean frequency) ---
+# weighted_freq = (magnitude * freqs[np.newaxis, :]).sum(axis=1) / (energy_over_time + 1e-10)
 
-# --- Peak Frequency over time (frequency with highest energy at each time slice) ---
-peak_freq = freqs[np.argmax(magnitude, axis=1)]
+# # --- Peak Frequency over time (frequency with highest energy at each time slice) ---
+# peak_freq = freqs[np.argmax(magnitude, axis=1)]
 
-# --- Frequency Bandwidth over time ---
-# Compute standard deviation (energy-weighted)
-mean_sq = (magnitude * (freqs[np.newaxis, :] ** 2)).sum(axis=1) / (energy_over_time + 1e-10)
-bandwidth = np.sqrt(mean_sq - weighted_freq**2)
+# # --- Frequency Bandwidth over time ---
+# # Compute standard deviation (energy-weighted)
+# mean_sq = (magnitude * (freqs[np.newaxis, :] ** 2)).sum(axis=1) / (energy_over_time + 1e-10)
+# bandwidth = np.sqrt(mean_sq - weighted_freq**2)
 
-# --- Spectral Entropy over time ---
-prob_dist = magnitude / (magnitude.sum(axis=1, keepdims=True) + 1e-10)
-entropy = -np.sum(prob_dist * np.log2(prob_dist + 1e-10), axis=1)
+# # --- Spectral Entropy over time ---
+# prob_dist = magnitude / (magnitude.sum(axis=1, keepdims=True) + 1e-10)
+# entropy = -np.sum(prob_dist * np.log2(prob_dist + 1e-10), axis=1)
 
-# --- Frequency Centroid over entire signal (already done) ---
-freq_centroid = (magnitude * freqs[np.newaxis, :]).sum() / (magnitude.sum() + 1e-10)
+# # --- Frequency Centroid over entire signal (already done) ---
+# freq_centroid = (magnitude * freqs[np.newaxis, :]).sum() / (magnitude.sum() + 1e-10)
 
 
 # Plotting SPWVD and WVD
+# plt.figure(figsize=(12, 6))
+
+# plt.subplot(1, 2, 1)
+# plt.imshow(np.abs(spwvd_matrix_v1), origin='lower', aspect='auto',
+#            extent=[0, 1, 0, fs], cmap='jet')
+# plt.title('SPWVD – Version 1 (FFT-based)')
+# plt.xlabel('Time [s]')
+# plt.ylabel('Frequency [Hz]')
+# plt.colorbar()
+
+# plt.subplot(1, 2, 2)
+# plt.imshow(np.abs(wvd_matrix), origin='lower', aspect='auto',
+#            extent=[0, 1, 0, fs], cmap='jet')
+# plt.title('WVD – Version 1 (FFT-based)')
+# plt.xlabel('Time [s]')
+# plt.ylabel('Frequency [Hz]')
+# plt.colorbar()
+# plt.tight_layout()
+# plt.show()
+
+print('Plotting results...')
+
 plt.figure(figsize=(12, 6))
-
-plt.subplot(1, 2, 1)
-plt.imshow(np.abs(spwvd_matrix_v1), origin='lower', aspect='auto',
-           extent=[0, 1, 0, fs], cmap='jet')
-plt.title('SPWVD – Version 1 (FFT-based)')
-plt.xlabel('Time [s]')
-plt.ylabel('Frequency [Hz]')
-plt.colorbar()
-
-plt.subplot(1, 2, 2)
-plt.imshow(np.abs(wvd_matrix), origin='lower', aspect='auto',
-           extent=[0, 1, 0, fs], cmap='jet')
-plt.title('WVD – Version 1 (FFT-based)')
+plt.imshow(np.abs(spwvd_Sample1), origin='lower', aspect='auto',
+           extent=[0, 1, 0, fs_Sample1], cmap='jet')
+plt.title('SPWVD – Sample 1 Energy (FFT-based)')
 plt.xlabel('Time [s]')
 plt.ylabel('Frequency [Hz]')
 plt.colorbar()
@@ -176,34 +208,34 @@ plt.show()
 
 # Plot features
 
-fig, axs = plt.subplots(5, 1, figsize=(12, 10), sharex=True)
+# fig, axs = plt.subplots(5, 1, figsize=(12, 10), sharex=True)
 
-axs[0].plot(t, energy_over_time)
-axs[0].set_ylabel('Energy')
-axs[0].set_title('Instantaneous Energy')
+# axs[0].plot(t, energy_over_time)
+# axs[0].set_ylabel('Energy')
+# axs[0].set_title('Instantaneous Energy')
 
-axs[1].plot(t, weighted_freq)
-axs[1].set_ylabel('Freq [Hz]')
-axs[1].set_title('Instantaneous Frequency (Mean)')
+# axs[1].plot(t, weighted_freq)
+# axs[1].set_ylabel('Freq [Hz]')
+# axs[1].set_title('Instantaneous Frequency (Mean)')
 
-axs[2].plot(t, peak_freq)
-axs[2].set_ylabel('Freq [Hz]')
-axs[2].set_title('Peak Frequency')
+# axs[2].plot(t, peak_freq)
+# axs[2].set_ylabel('Freq [Hz]')
+# axs[2].set_title('Peak Frequency')
 
-axs[3].plot(t, bandwidth)
-axs[3].set_ylabel('Hz')
-axs[3].set_title('Frequency Bandwidth')
+# axs[3].plot(t, bandwidth)
+# axs[3].set_ylabel('Hz')
+# axs[3].set_title('Frequency Bandwidth')
 
-axs[4].plot(t, entropy)
-axs[4].set_ylabel('Entropy')
-axs[4].set_title('Spectral Entropy')
-axs[4].set_xlabel('Time [s]')
+# axs[4].plot(t, entropy)
+# axs[4].set_ylabel('Entropy')
+# axs[4].set_title('Spectral Entropy')
+# axs[4].set_xlabel('Time [s]')
 
-plt.tight_layout()
-plt.show()
+# plt.tight_layout()
+# plt.show()
 
-# --- Print the frequency centroid ---
-print(f"Overall Frequency Centroid: {freq_centroid:.2f} Hz")
+# # --- Print the frequency centroid ---
+# print(f"Overall Frequency Centroid: {freq_centroid:.2f} Hz")
 
 
 # def wvd(x, fs):
