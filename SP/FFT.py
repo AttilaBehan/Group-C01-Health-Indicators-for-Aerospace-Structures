@@ -109,7 +109,8 @@ complete_data['Amplitude'] = complete_data['Amplitude'].interpolate(method='line
 
 
 # Function to compute FFT
-def compute_fft(data, sampling_rate=1.8e6):
+def compute_fft(data, sampling_rate=1.8e6): # The sampling rate has been computed using sensor datasheet * 2 (100-900kHz)
+    # At the same time the sampling rate should be based on analog data and not the sensor but that doesn't make sense either since it gives +/- 3.73Hz
     N = len(data)  # Number of data points
     T = 1.0 / sampling_rate  # Sampling interval
     xf = fftfreq(N, T)[:N//2]  # Frequency bins
