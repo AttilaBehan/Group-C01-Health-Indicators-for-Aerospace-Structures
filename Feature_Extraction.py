@@ -103,7 +103,17 @@ def Time_Domain_Features(data):
     return T_features
 
 def time_windows_extract(cycle_length, dir):
+    """
+        Extracts time domain features from sensor data.
 
+        Parameters:
+            - cycle_length (int): Length of the cycle.
+            - dir (string): Directory of the samples.
+
+        Output:
+            - CSV files containing time domain features.
+    """
+    
     for root, dirs, samples in os.walk(dir):
         for sample in samples:
             file=os.path.join(root, sample)
