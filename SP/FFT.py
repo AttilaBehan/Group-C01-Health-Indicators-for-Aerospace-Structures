@@ -92,14 +92,11 @@ data = pd.read_csv(r"C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_
 # Ensure that the data is sorted by cycle number (if not already sorted)
 data = data.sort_values(by='Time')
 
-# Check the first few rows of the data to confirm it's loaded correctly
-print(data.head())
-
 # Identify missing cycles
 all_cycles = np.arange(data['Time'].min(), data['Time'].max() + 1)  # All cycles in the range
 existing_cycles = data['Time'].values  # Cycles that have data
 missing_cycles = np.setdiff1d(all_cycles, existing_cycles)  # Missing cycles
-
+print(existing_cycles)
 # Create a new DataFrame with all cycles
 complete_data = pd.DataFrame({'Time': all_cycles})
 
@@ -109,8 +106,10 @@ complete_data = pd.merge(complete_data, data, on='Time', how='left')
 # Interpolate missing amplitude values (linear interpolation)
 complete_data['Amplitude'] = complete_data['Amplitude'].interpolate(method='linear')
 
+
+
 # Function to compute FFT
-def compute_fft(data, sampling_rate=3.61):
+def compute_fft(data, sampling_rate=1.8e6):
     N = len(data)  # Number of data points
     T = 1.0 / sampling_rate  # Sampling interval
     xf = fftfreq(N, T)[:N//2]  # Frequency bins

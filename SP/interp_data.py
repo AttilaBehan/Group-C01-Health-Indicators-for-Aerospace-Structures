@@ -51,8 +51,8 @@ def interpolate_missing_cycles(file_path, save_path, time_column='Time', max_gap
 
 
 # Example usage
-file_path = r"C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample2.csv"
-save_path = r"C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV_interp\Sample2Interp.csv"
+file_path = r"C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample11.csv"
+save_path = r"C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV_interp\Sample11Interp.csv"
 
 interpolated_df = interpolate_missing_cycles(file_path, save_path)
 
