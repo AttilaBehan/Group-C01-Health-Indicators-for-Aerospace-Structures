@@ -431,9 +431,8 @@ def load_data(dir, filename, labelled_fraction, ignore):
     # Walk directory
     for root, dirs, files in os.walk(dir):
         for name in files:
-            if name == filename:  # If correct file to be included in training data
+            if name == filename+".csv":  # If correct file to be included in training data
                 read_data = np.array(pd.read_csv(os.path.join(root, name)))
-
                 # Set data and labels arrays to data from first sample
                 if first:
                     data = np.array([read_data])
@@ -444,6 +443,7 @@ def load_data(dir, filename, labelled_fraction, ignore):
                 else:
                     data = np.concatenate((data, [read_data]))
                     labels = np.append(labels, 0)  # Default label is 0
+                    labels = labels.reshape(-1,1)
 
     if labels is not None and len(labels) > 0:
 
@@ -453,7 +453,6 @@ def load_data(dir, filename, labelled_fraction, ignore):
 
         # Add artificial labels
         teol = data.shape[0]
-
         x_values = np.arange(0, teol+1)
         #health_indicators = ((x_values ** 2) / (teol ** 2)) * 2 - 1  # Equation scaled from -1 to 1
         health_indicators = 1-2*x_values/teol
@@ -594,8 +593,8 @@ def DeepSAD_train_run(dir, freq, file_name, opt=False):
 
     ### Hyperparamters ###
     # Fixed/background
-    lr_milestones_AE = []  # [8]  # Milestones when learning rate reduces
-    lr_milestones = []  # [20, 40, 60, 80]
+    lr_milestones_AE = [8]  # [8]  # Milestones when learning rate reduces
+    lr_milestones = [20, 40, 60, 80]  # [20, 40, 60, 80]
     gamma = 0.1  # Factor to reduce LR by at milestones
     gamma_AE = 0.1  # "
     eps = 1 * 10 ** (-6)  # Very small number to prevent zero errors
@@ -622,11 +621,11 @@ def DeepSAD_train_run(dir, freq, file_name, opt=False):
     pass_dir = dir
 
     # Make string of filename for train/test data
-    file_name_with_freq = freq + "kHz_" + file_name + ".csv"
+    file_name_with_freq = file_name
     # print(f"Training with directory: {dir}, frequency: {freq}, filename: {file_name_with_freq}")
 
-    samples = ["PZT-FFT-HLB-L1-03", "PZT-FFT-HLB-L1-04", "PZT-FFT-HLB-L1-05", "PZT-FFT-HLB-L1-09", "PZT-FFT-HLB-L1-23"]
-    frequencies = ["050_kHz", "100_kHz", "125_kHz", "150_kHz", "200_kHz", "250_kHz"]
+    samples = ["Sample1", "Sample2", "Sample3", "Sample4", "Sample5", "Sample6", "Sample7", "Sample8", "Sample9", "Sample10", "Sample11", "Sample12"]
+    features = ["Time (Cycle)","Amplitude_Time: Mean","Amplitude_Time: Standard Deviation","Amplitude_Time: Root Amplitude","Amplitude_Time: Root Mean Square","Amplitude_Time: Root Sum of Squares","Amplitude_Time: Peak","Amplitude_Time: Skewness","Amplitude_Time: Kurtosis","Amplitude_Time: Crest factor","Amplitude_Time: Clearance factor","Amplitude_Time: Shape factor","Amplitude_Time: Impulse factor","Amplitude_Time: Maximum to minimum difference","Amplitude_Time: Central moment for 3rd order","Amplitude_Time: Central moment for 4th order","Amplitude_Time: Central moment for 5th order","Amplitude_Time: Central moment for 6th order","Amplitude_Time: FM4","Amplitude_Time: Median","Amplitude_Freq: Mean Frequency","Amplitude_Freq: f2","Amplitude_Freq: f3","Amplitude_Freq: f4","Amplitude_Freq: f5","Amplitude_Freq: f6","Amplitude_Freq: f7","Amplitude_Freq: f8","Amplitude_Freq: f9","Amplitude_Freq: f10","Amplitude_Freq: f11","Amplitude_Freq: f12","Amplitude_Freq: f13","Amplitude_Freq: f14","Amplitude_Physics: Cumulative Rise_time/Amp","Rise-time_Time: Mean","Rise-time_Time: Standard Deviation","Rise-time_Time: Root Amplitude","Rise-time_Time: Root Mean Square","Rise-time_Time: Root Sum of Squares","Rise-time_Time: Peak","Rise-time_Time: Skewness","Rise-time_Time: Kurtosis","Rise-time_Time: Crest factor","Rise-time_Time: Clearance factor","Rise-time_Time: Shape factor","Rise-time_Time: Impulse factor","Rise-time_Time: Maximum to minimum difference","Rise-time_Time: Central moment for 3rd order","Rise-time_Time: Central moment for 4th order","Rise-time_Time: Central moment for 5th order","Rise-time_Time: Central moment for 6th order","Rise-time_Time: FM4","Rise-time_Time: Median","Rise-time_Freq: Mean Frequency","Rise-time_Freq: f2","Rise-time_Freq: f3","Rise-time_Freq: f4","Rise-time_Freq: f5","Rise-time_Freq: f6","Rise-time_Freq: f7","Rise-time_Freq: f8","Rise-time_Freq: f9","Rise-time_Freq: f10","Rise-time_Freq: f11","Rise-time_Freq: f12","Rise-time_Freq: f13","Rise-time_Freq: f14","Energy_Time: Mean","Energy_Time: Standard Deviation","Energy_Time: Root Amplitude","Energy_Time: Root Mean Square","Energy_Time: Root Sum of Squares","Energy_Time: Peak","Energy_Time: Skewness","Energy_Time: Kurtosis","Energy_Time: Crest factor","Energy_Time: Clearance factor","Energy_Time: Shape factor","Energy_Time: Impulse factor","Energy_Time: Maximum to minimum difference","Energy_Time: Central moment for 3rd order","Energy_Time: Central moment for 4th order","Energy_Time: Central moment for 5th order","Energy_Time: Central moment for 6th order","Energy_Time: FM4","Energy_Time: Median","Energy_Freq: Mean Frequency","Energy_Freq: f2","Energy_Freq: f3","Energy_Freq: f4","Energy_Freq: f5","Energy_Freq: f6","Energy_Freq: f7","Energy_Freq: f8","Energy_Freq: f9","Energy_Freq: f10","Energy_Freq: f11","Energy_Freq: f12","Energy_Freq: f13","Energy_Freq: f14","Energy_Physics: Cumulative energy","Counts_Time: Mean","Counts_Time: Standard Deviation","Counts_Time: Root Amplitude","Counts_Time: Root Mean Square","Counts_Time: Root Sum of Squares","Counts_Time: Peak","Counts_Time: Skewness","Counts_Time: Kurtosis","Counts_Time: Crest factor","Counts_Time: Clearance factor","Counts_Time: Shape factor","Counts_Time: Impulse factor","Counts_Time: Maximum to minimum difference","Counts_Time: Central moment for 3rd order","Counts_Time: Central moment for 4th order","Counts_Time: Central moment for 5th order","Counts_Time: Central moment for 6th order","Counts_Time: FM4","Counts_Time: Median","Counts_Freq: Mean Frequency","Counts_Freq: f2","Counts_Freq: f3","Counts_Freq: f4","Counts_Freq: f5","Counts_Freq: f6","Counts_Freq: f7","Counts_Freq: f8","Counts_Freq: f9","Counts_Freq: f10","Counts_Freq: f11","Counts_Freq: f12","Counts_Freq: f13","Counts_Freq: f14","Counts_Physics: Cumulative counts","Duration_Time: Mean","Duration_Time: Standard Deviation","Duration_Time: Root Amplitude","Duration_Time: Root Mean Square","Duration_Time: Root Sum of Squares","Duration_Time: Peak","Duration_Time: Skewness","Duration_Time: Kurtosis","Duration_Time: Crest factor","Duration_Time: Clearance factor","Duration_Time: Shape factor","Duration_Time: Impulse factor","Duration_Time: Maximum to minimum difference","Duration_Time: Central moment for 3rd order","Duration_Time: Central moment for 4th order","Duration_Time: Central moment for 5th order","Duration_Time: Central moment for 6th order","Duration_Time: FM4","Duration_Time: Median","Duration_Freq: Mean Frequency","Duration_Freq: f2","Duration_Freq: f3","Duration_Freq: f4","Duration_Freq: f5","Duration_Freq: f6","Duration_Freq: f7","Duration_Freq: f8","Duration_Freq: f9","Duration_Freq: f10","Duration_Freq: f11","Duration_Freq: f12","Duration_Freq: f13","Duration_Freq: f14","RMS_Time: Mean","RMS_Time: Standard Deviation","RMS_Time: Root Amplitude","RMS_Time: Root Mean Square","RMS_Time: Root Sum of Squares","RMS_Time: Peak","RMS_Time: Skewness","RMS_Time: Kurtosis","RMS_Time: Crest factor","RMS_Time: Clearance factor","RMS_Time: Shape factor","RMS_Time: Impulse factor","RMS_Time: Maximum to minimum difference","RMS_Time: Central moment for 3rd order","RMS_Time: Central moment for 4th order","RMS_Time: Central moment for 5th order","RMS_Time: Central moment for 6th order","RMS_Time: FM4","RMS_Time: Median","RMS_Freq: Mean Frequency","RMS_Freq: f2","RMS_Freq: f3","RMS_Freq: f4","RMS_Freq: f5","RMS_Freq: f6","RMS_Freq: f7","RMS_Freq: f8","RMS_Freq: f9","RMS_Freq: f10","RMS_Freq: f11","RMS_Freq: f12","RMS_Freq: f13","RMS_Freq: f14"]
     # Initialise results matrix
     results = np.empty((5, 5, 30))
     hps = []
@@ -635,7 +634,7 @@ def DeepSAD_train_run(dir, freq, file_name, opt=False):
     if opt:
         filename_opt = os.path.join(dir, f"hyperparameters-opt-{file_name}.csv")
         if not os.path.exists(filename_opt):
-            hyperparameters_df = pd.DataFrame(index=frequencies, columns=samples)
+            hyperparameters_df = pd.DataFrame(index=features, columns=samples)
 
         else:
             hyperparameters_df = pd.read_csv(filename_opt, index_col=0)
@@ -658,8 +657,7 @@ def DeepSAD_train_run(dir, freq, file_name, opt=False):
             sample = temp_samples[count]
 
             # Load training sample
-            temp_data, temp_targets = load_data(os.path.join(dir, sample), file_name_with_freq, labelled_fraction, ignore)
-
+            temp_data, temp_targets = load_data(dir, sample, labelled_fraction, ignore)
             # Create new arrays for training data and targets
             if first:
                 arr_data = copy.deepcopy(temp_data)
@@ -668,8 +666,10 @@ def DeepSAD_train_run(dir, freq, file_name, opt=False):
 
             # Concatenate data and targets from other samples
             else:
-                arr_data = np.concatenate((arr_data, temp_data))
+                arr_data = np.concatenate((arr_data, temp_data), axis=1)
+                print(temp_targets.shape, arr_targets.shape)
                 arr_targets = np.concatenate((arr_targets, temp_targets))
+                
 
         # Normalise training data
         normal_mn = np.mean(arr_data, axis=0)
@@ -682,7 +682,7 @@ def DeepSAD_train_run(dir, freq, file_name, opt=False):
 
         # Create list of data dimensions to set number of input nodes in neural network
         size = [train_data.shape[1], train_data.shape[2]]
-
+        print(train_data.shape, semi_targets.shape)
         # Convert to dataset and create loader
         train_dataset = TensorDataset(train_data, semi_targets)
 
@@ -803,7 +803,7 @@ def DeepSAD_HPC():
     """
     #csv_dir = r"C:\Users\pablo\OneDrive\Escritorio\DeepSAD\PZT-FFT-HLB"
     #csv_dir = r"/zhome/ed/c/212206/DeepSAD/PZT-FFT-HLB"
-    csv_dir = "C:\\Users\\Jamie\\Documents\\Uni\\Year 2\\Q3+4\\Project\\CSV-FFT-HLB-Reduced"
+    csv_dir = "C:\\Users\\job\\OneDrive - Delft University of Technology\\Documents\\Delft\\Course files\\Year 2\\Q3\\project\\Accoustig emmision data\\AE-Features"
 
     print(csv_dir)
 
@@ -814,14 +814,14 @@ def DeepSAD_HPC():
 
     # List frequencies, filenames and samples
     frequencies = ["050", "100", "125", "150", "200", "250"]
-    filenames = ["FFT_FT_Reduced", "HLB_FT_Reduced"]
-    samples = ["PZT-FFT-HLB-L1-03", "PZT-FFT-HLB-L1-04", "PZT-FFT-HLB-L1-05", "PZT-FFT-HLB-L1-09", "PZT-FFT-HLB-L1-23"]
+    filenames = ["Features_LW100Int100Cycle.csv", "Features_LW500Int100Cycle.csv", "Features_LW500Int500Cycle.csv", "Features_LW1000Int100Cycle.csv", "Features_LW1000Int500Cycle.csv", "Features_LW1000Int1000Cycle.csv", "Features_LW5000Int100Cycle.csv", "Features_LW5000Int500Cycle.csv", "Features_LW5000Int1000Cycle.csv", "Features_LW5000Int5000Cycle,csv"]
+    samples = ["Sample1", "Sample2", "Sample3", "Sample4", "Sample5", "Sample6", "Sample7", "Sample8", "Sample9", "Sample10", "Sample11", "Sample12"]
 
     if optimise:
 
         # Optimise hyperparameters for all files and frequencies
         for file in filenames:
-            for freq in frequencies:
+            for freq in samples:
                 params = DeepSAD_train_run(csv_dir, freq, file, True)
 
     else:
@@ -830,13 +830,13 @@ def DeepSAD_HPC():
         for transform in range(2):
 
             # Generate HIs for all frequencies from FFT features
-            for freq in range(len(frequencies)):
-                print(f"Processing frequency: {frequencies[freq]} kHz for " + filenames[transform])
-                HIs[transform][freq] = DeepSAD_train_run(csv_dir, frequencies[freq], filenames[transform])
+            for samp in range(len(samples)):
+                print(f"Processing frequency: {samples[samp]} kHz for " + filenames[transform])
+                HIs[transform][freq] = DeepSAD_train_run(csv_dir, samples[samp], samples[transform])
 
         # Save and plot results
         save_evaluation(np.array(HIs[0]), "DeepSAD_FFT", csv_dir)
-        save_evaluation(np.array(HIs[1]), "DeepSAD_HLB", csv_dir)
+        #save_evaluation(np.array(HIs[1]), "DeepSAD_HLB", csv_dir)
 
 
 #for repeats in [42, 52, 62, 72, 82]:

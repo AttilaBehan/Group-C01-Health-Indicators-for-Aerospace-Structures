@@ -12,7 +12,6 @@ from VAE import VAE_optimize_hyperparameters, VAE_train_run, VAE_process_csv_fil
 from WAE import eval_wae
 import Graphs
 import Extract_features
-
 # Set options
 pd.set_option('display.max_columns', 15)
 pd.set_option('display.width', 400)
@@ -324,7 +323,7 @@ def hyperDeepSad(dir):
 
     # List frequencies, filenames and samples
     frequencies = ["050", "100", "125", "150", "200", "250"]
-    filenames = ["FFT_FT_Reduced", "HLB_FT_Reduced"]
+    filenames = ["Sample1", "Sample2", "Sample3", "Sample4", "Sample5", "Sample6", "Sample7", "Sample8", "Sample9", "Sample10", "Sample11", "Sample12"]
     samples = ["PZT-FFT-HLB-L1-03", "PZT-FFT-HLB-L1-04", "PZT-FFT-HLB-L1-05", "PZT-FFT-HLB-L1-09", "PZT-FFT-HLB-L1-23"]
 
     # Optimise hyperparameters for all files and frequencies
@@ -347,9 +346,7 @@ def saveDeepSAD(dir):
     """
 
     # List frequencies and filenames
-    frequencies = ["050", "100", "125", "150", "200", "250"]
-    types = ["FFT", "HLB"]
-    filename = "_FT_Reduced"
+    samples = ["Sample1", "Sample2", "Sample3", "Sample4",   "Sample5", "Sample6", "Sample7", "Sample8", "Sample9", "Sample10", "Sample11", "Sample12"]
     # filename_FFT = "FFT_FT_Reduced"
     # filename_HLB = "HLB_FT_Reduced"
 
@@ -358,22 +355,26 @@ def saveDeepSAD(dir):
     HIs_HLB = np.empty((6), dtype=object)
 
     # Generate HIs for all frequencies from FFT features
-    for freq in range(len(frequencies)):
-        print(f"Processing frequency: {frequencies[freq]} kHz for FFT")
-        HIs_FFT[freq] = DeepSAD_train_run(dir, frequencies[freq], "FFT" + filename)
+    for samp in range(len(samples)):
+        filename = samples[samp]
+        print(f"Processing frequency: {samples[samp]} kHz for FFT")
+        #try:
+        HIs_FFT[samp] = DeepSAD_train_run(dir, samples[samp], filename)
+        #except:
+        #    print(f"file {filename} not found")
 
     # Save and plot results
     save_evaluation(np.array(HIs_FFT), "DeepSAD_FFT", dir, filename)
-    plot_ds_images(dir, "FFT")
+    #plot_ds_images(dir, "FFT")
 
     # Generate HIs for all frequencies from Hilbert features
-    for freq in range(len(frequencies)):
-        print(f"Processing frequency: {frequencies[freq]} kHz for HLB")
-        HIs_HLB[freq] = DeepSAD_train_run(dir, frequencies[freq], "HLB" + filename)
+    #for freq in range(len(frequencies)):
+    #    print(f"Processing frequency: {frequencies[freq]} kHz for HLB")
+    #    HIs_HLB[freq] = DeepSAD_train_run(dir, frequencies[freq], "HLB" + filename)
 
     # Save and plot results
-    save_evaluation(np.array(HIs_HLB), "DeepSAD_HLB", dir, filename)
-    plot_ds_images(dir, "HLB")
+    # save_evaluation(np.array(HIs_HLB), "DeepSAD_HLB", dir, filename)
+    # plot_ds_images(dir, "HLB")
 
 
 def hyperVAE(dir, concatenate=False):
