@@ -62,13 +62,13 @@ def plot_results(df, imfs_df, iterations_dict, sd_dict):
         plt.show()
 
 # Load dataset
-df = pd.read_csv(r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\Low_Features_500_500_CSV\Sample1.csv")
+df = pd.read_csv(r"SP\LowLevelFeaturesSample1.csv")
 
 # Run EMD
 imfs_df, iterations_dict, sd_dict = runEMD(df)
 
 # Save results
-imfs_df.to_csv(r"SHM-GroupA7-main\Signal_Processing\IMFs_Output.csv" , index=False)
+imfs_df.to_csv(r"SP\OutputEMD" , index=False)
 
 # Plot results
 plot_results(df, imfs_df, iterations_dict, sd_dict)
