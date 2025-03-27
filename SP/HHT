@@ -1,0 +1,41 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.signal import hilbert
+from PyEMD import EMD
+
+# Load dataset
+file_path = "SP\LowLevelFeaturesSample1.csv"
+df = pd.read_csv(file_path)
+time = df['Time'].values
+signal = df['Amplitude'].values
+
+# Apply Empirical Mode Decomposition (EMD)
+emd = EMD()
+imfs = emd(signal)
+
+# Apply Hilbert Transform
+analytic_signal = hilbert(imfs)
+instantaneous_amplitude = np.abs(analytic_signal)
+instantaneous_phase = np.angle(analytic_signal)
+instantaneous_frequency = np.diff(instantaneous_phase) / np.diff(time[:, None])
+
+# Plot IMFs
+plt.figure(figsize=(10, 8))
+for i in range(imfs.shape[0]):
+    plt.subplot(imfs.shape[0] + 1, 1, i + 1)
+    plt.plot(time, imfs[i], label=f'IMF {i+1}')
+    plt.legend()
+plt.title('Intrinsic Mode Functions')
+plt.tight_layout()
+plt.show()
+
+# Save results to CSV
+output_file = "/mnt/data/HHT_Results.csv"
+out_df = pd.DataFrame({'Time': time[:-1]})  # Remove last point to match dimensions
+for i in range(imfs.shape[0]):
+    out_df[f'IMF_{i+1}'] = imfs[i][:-1]
+    out_df[f'Instantaneous_Frequency_{i+1}'] = instantaneous_frequency[:, i]
+out_df.to_csv(output_file, index=False)
+
+print(f"HHT results saved to {output_file}")
