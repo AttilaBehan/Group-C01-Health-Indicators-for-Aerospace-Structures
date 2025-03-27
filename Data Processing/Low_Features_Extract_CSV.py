@@ -8,10 +8,10 @@ def load_mat(filename):
     Load a .mat file from a directory.
     
     Parameters:
-        directory (str): Path to the .mat file.
+        filename (str): Path to the .mat file.
     
     Returns:
-        dict: Dictionary containing the data from the .mat file.
+        converts .mat to .csv files and saves them at output_dir
     """
     #Load MAT file
     file = mat73.loadmat(filename)
