@@ -5,13 +5,13 @@ import os
 
 def load_mat(filename):
     """
-    Load a .mat file from a directory.
+    Convert a .mat file to a .csv file within a directory.
     
     Parameters:
         directory (str): Path to the .mat file.
     
     Returns:
-        dict: Dictionary containing the data from the .mat file.
+        output_dir (str): Path to the output directory.
     """
     #Load MAT file
     file = mat73.loadmat(filename)
@@ -57,6 +57,8 @@ def load_mat(filename):
         #Convert to DataFrame
         df = pd.DataFrame(data)
         df = df.dropna()
+
+        return output_dir
 
         #Save to CSV file
         csv_filename = os.path.join(output_dir, f"{sample_key}.csv")
