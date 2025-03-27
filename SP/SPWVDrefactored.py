@@ -4,17 +4,55 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from Feature_Extraction import CSV_to_Array
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.signal import hilbert, chirp
 from scipy.signal.windows import gaussian
 from scipy.ndimage import convolve1d
+from tftb.processing import smoothed_pseudo_wigner_ville
+from sklearn.preprocessing import StandardScaler
+
+random_signal = False
 
 print('Reading CSV file...')
-sample_amplitude, sample_risetime, sample_energy, sample_counts, sample_duration, sample_rms = CSV_to_Array('SP\\LowLevelFeaturesSample1.csv')
+#sample_amplitude, sample_risetime, sample_energy, sample_counts, sample_duration, sample_rms = CSV_to_Array('SP\\LowLevelFeaturesSample1.csv')
+df = pd.read_csv('SP\\Sample1Interp.csv')
 
-sample_amplitude = sample_amplitude[:2000]
-sample_duration = sample_duration[150:2000]
-sample_energy = sample_energy[:7002]
+df = df.iloc[:, 1:]  # Keep all columns except first one (empty)
+print(df)
+
+df = df.iloc[:6000]
+print(df.size)
+#df = df.iloc[::3]
+
+# Normalizing all col except time
+# df_to_normalize = df.drop(columns=['Time'])
+# scaler = StandardScaler()
+# df_normalized = pd.DataFrame(scaler.fit_transform(df_to_normalize), columns=df_to_normalize.columns)
+# df_normalized['Time'] = df['Time']
+# df_normalized = df_normalized[::30]
+# print(df_normalized.size)
+
+df_not_to_normalize = df.drop(columns=['Amplitude'])
+
+# Select the 'Amplitude' column
+df_to_normalize = df['Amplitude']
+
+# Reshape it to a 2D array (n_samples, 1 feature)
+df_to_normalize = df_to_normalize.values.reshape(-1, 1)
+
+# Initialize the StandardScaler
+scaler = StandardScaler()
+
+# Apply fit_transform to normalize the data
+df_normalized = scaler.fit_transform(df_to_normalize)
+
+# If you want to convert it back to a pandas DataFrame (with the same index and column name)
+df_normalized = pd.DataFrame(df_normalized, columns=['Amplitude'], index=df.index)
+df_normalized['Time'] = df['Time']
+df_normalized = df_normalized[::10]
+print(df_normalized)
+
 print('Data collected')
 
 '''
@@ -56,7 +94,7 @@ HOW IT WOKRS
 6. SMoothing frequency domain (to suppress sharp fluctuations that don't correspond to real features in the AE data)
 '''
 
-def wvd(signal, fs):
+def wvd_og(signal):
     """
     Wigner-Ville Distribution (WVD) using FFT across lag axis.
     """
@@ -75,12 +113,12 @@ def wvd(signal, fs):
     W = np.fft.fftshift(np.fft.fft(W, axis=1), axes=1)
     return np.real(W)
 
-def spwvd(signal, fs, time_smoothing=15, freq_smoothing=15):
+def spwvd_og(signal, time_smoothing=15, freq_smoothing=15):
     """
     Smoothed Pseudo Wigner-Ville Distribution (SPWVD) with Gaussian smoothing.
     """
     N = len(signal)
-    W = wvd(signal, fs)
+    W = wvd_og(signal)
 
     # Time smoothing (along time axis)
     time_kernel = gaussian(N, std=time_smoothing)
@@ -94,7 +132,7 @@ def spwvd(signal, fs, time_smoothing=15, freq_smoothing=15):
 
     return W_smoothed
 
-def wvd_simple(signal, fs):
+def wvd_simple(signal):
     """
     WVD using zero-padded lag computation with FFT.
     Easier to understand but not optimal in speed.
@@ -113,8 +151,8 @@ def wvd_simple(signal, fs):
     W = np.fft.fftshift(np.fft.fft(W, axis=1), axes=1)
     return np.real(W)
 
-def spwvd_simple(signal, fs, time_smoothing=15, freq_smoothing=15):
-    W = wvd_simple(signal, fs)
+def spwvd_simple(signal, time_smoothing=15, freq_smoothing=15):
+    W = wvd_simple(signal)
 
     time_kernel = gaussian(W.shape[0], std=time_smoothing)
     time_kernel /= np.sum(time_kernel)
@@ -127,26 +165,92 @@ def spwvd_simple(signal, fs, time_smoothing=15, freq_smoothing=15):
     return W_freq_smoothed
 
 
-# Test signal
-fs = 1000
-t = np.linspace(0, 1, fs)
-x = chirp(t, f0=100, f1=400, t1=1, method='quadratic') + chirp(t, f0=350, f1=50, t1=1, method='quadratic')
-#print('signal', x)
-N = len(x)
-freqs = np.linspace(0, fs, N)
+if random_signal:
+    # Test signal
+    fs = 1000
+    t = np.linspace(0, 1, fs)
+    x = chirp(t, f0=100, f1=400, t1=1, method='quadratic') + chirp(t, f0=350, f1=50, t1=1, method='quadratic')
+    #print('signal', x)
+    N = len(x)
+    freqs = np.linspace(0, fs, N)
 
-# SPWVD Matrices
-# spwvd_matrix_v1 = spwvd(x, fs, time_smoothing=20, freq_smoothing=20)
-# magnitude = np.abs(spwvd_matrix_v1)
-# spwvd_matrix_v2 = spwvd_simple(x, fs, time_smoothing=20, freq_smoothing=20)
-# wvd_matrix = wvd(x, fs)
+    # SPWVD Matrices
+    spwvd_matrix_v1 = spwvd_og(x, time_smoothing=20, freq_smoothing=20)
+    magnitude = np.abs(spwvd_matrix_v1)
+    spwvd_matrix_v2 = spwvd_simple(x, time_smoothing=20, freq_smoothing=20)
+    wvd_matrix = wvd_og(x)
+    # Plot
+    print('Plotting results...')
+
+    plt.figure(figsize=(12, 6))
+    plt.imshow(np.abs(spwvd_matrix_v1), origin='lower', aspect='auto', cmap='jet')
+    plt.title('SPWVD – Sample 1 Energy (FFT-based)')
+    plt.xlabel('Time [s]')
+    plt.ylabel('Frequency [Hz]')
+    plt.colorbar()
+
+    plt.tight_layout()
+    plt.show()
+
+    # Compute SPWVD
+    freq_bins = 4096
+    twindow = np.array([0.001])
+    fwindow = np.array([0.001])
+    #tfr, t_vals, f_vals, _ = smoothed_pseudo_wigner_ville(df["Amplitude"], timestamps=df["Time"], freq_bins=freq_bins, twindow=twindow, fwindow=fwindow)
+    print('Starting SPWVD on test...')
+    tfr = smoothed_pseudo_wigner_ville(x, timestamps=t, freq_bins=freq_bins, twindow=twindow, fwindow=fwindow)
+    print('Second SPWVD completed')
+    print(tfr.shape)
+    print(type(tfr))
+    print(tfr)
+
+    plt.figure(figsize=(10, 6))
+    plt.imshow(np.abs(tfr), aspect='auto', origin='lower', cmap='jet', extent=[0, tfr.shape[1], 0, tfr.shape[0]])
+    plt.colorbar(label='Magnitude')
+    plt.xlabel('Time (samples)')
+    plt.ylabel('Frequency bins')
+    plt.title('Time-Frequency Representation (TFR)')
+    plt.show()
+
 
 # Try real data
 print('Starting SPWVD...')
-fs_Sample1 = len(sample_energy)/2931*2
-spwvd_Sample1 = spwvd(sample_energy, fs_Sample1, time_smoothing=20, freq_smoothing=15)
-magnitude_Sample1 = np.abs(spwvd_Sample1)
+#fs_Sample1 = len(sample_energy)/2931*2
+# spwvd_Sample1 = spwvd(df["Amplitude"], time_smoothing=20, freq_smoothing=15)
+# magnitude_Sample1 = np.abs(spwvd_Sample1)
+
+# Compute SPWVD
+freq_bins = 128  # 16384  # np.linspace(0, 100, 256)
+twindow = np.array([0.1])
+fwindow = np.array([0.1])
+#tfr, t_vals, f_vals, _ = smoothed_pseudo_wigner_ville(df["Amplitude"], timestamps=df["Time"], freq_bins=freq_bins, twindow=twindow, fwindow=fwindow)
 print('SPWVD completed')
+print('Starting second SPWVD...')
+tfr = smoothed_pseudo_wigner_ville(df["Energy"], timestamps=df["Time"], freq_bins=freq_bins, twindow=twindow, fwindow=fwindow)
+print('Second SPWVD completed')
+print(tfr.shape)
+print(type(tfr))
+print(tfr)
+
+# # Apply inverse transformation to the reshaped data
+tfr_original_scale = scaler.inverse_transform(tfr)
+
+
+
+plt.figure(figsize=(10, 6))
+plt.imshow(np.abs(tfr_original_scale), aspect='auto', origin='lower', cmap='jet', extent=[0, tfr.shape[1], 0, tfr.shape[0]])
+plt.colorbar(label='Magnitude')
+plt.xlabel('Time (samples)')
+plt.ylabel('Frequency bins')
+plt.title('Time-Frequency Representation (TFR)')
+plt.show()
+# Plot
+# plt.pcolormesh(t_vals, f_vals, np.abs(tfr), shading='auto')
+# plt.xlabel("Time (s)")
+# plt.ylabel("Frequency (Cycles/sample)")
+# plt.title("Smoothed Pseudo Wigner-Ville Distribution (SPWVD)")
+# plt.colorbar(label="Amplitude")
+# plt.show()
 
 # Features
 
