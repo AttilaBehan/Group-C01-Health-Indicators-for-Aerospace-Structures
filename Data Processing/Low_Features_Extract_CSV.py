@@ -11,11 +11,7 @@ def load_mat(filename):
         filename (str): Path to the .mat file.
     
     Returns:
-<<<<<<< HEAD
-        output_dir (str): Path to the output directory.
-=======
-        converts .mat to .csv files and saves them at output_dir
->>>>>>> 33c28f4e99fb95ad888636644252d8d59df70ef2
+        output_dir (str): Path to the output directory. 
     """
     #Load MAT file
     file = mat73.loadmat(filename)
