@@ -9,7 +9,7 @@ from scipy.signal import hilbert, chirp
 from scipy.signal.windows import gaussian
 from scipy.ndimage import convolve1d
 
-print('Reading CSV file')
+print('Reading CSV file...')
 sample_amplitude, sample_risetime, sample_energy, sample_counts, sample_duration, sample_rms = CSV_to_Array('SP\\LowLevelFeaturesSample1.csv')
 
 sample_amplitude = sample_amplitude[:2000]
