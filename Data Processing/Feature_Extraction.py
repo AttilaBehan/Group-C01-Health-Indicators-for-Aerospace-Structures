@@ -103,6 +103,7 @@ def Time_Domain_Features(data):
     return T_features
 
 def time_windows_extract(cycle_length, dir):
+
     """
         Extracts time domain features from sensor data.
 
@@ -113,7 +114,7 @@ def time_windows_extract(cycle_length, dir):
         Output:
             - CSV files containing time domain features.
     """
-    
+
     for root, dirs, samples in os.walk(dir):
         for sample in samples:
             file=os.path.join(root, sample)
@@ -152,3 +153,5 @@ def time_windows_extract(cycle_length, dir):
             features_df=features_df.dropna()
             csv_filename = os.path.join(output_dir, f"{sample[:-4]}.csv")
             features_df.to_csv(csv_filename, index=False)    
+
+time_windows_extract(500, r"C:\Users\attil\OneDrive\TU_Delft\Project_SHM\Low_Features_500_500_CSV")

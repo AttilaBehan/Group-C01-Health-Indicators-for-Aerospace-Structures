@@ -4,14 +4,14 @@ import numpy as np
 import os 
 
 #Load MAT file
-filename=#INPUT FILE, format in the following way: r"file path"
+filename=r"C:\Users\attil\OneDrive\TU_Delft\Project_SHM\Signals_LW500Int500Cycle.mat"
 file = mat73.loadmat(filename)
 
 #Define Columns/Attributes
 Attributes = ['Time', 'Amplitude', 'Rise-Time', 'Energy', 'Counts', 'Duration', 'RMS']
 
 #Define output directory
-output_dir =#OUTPUT FILE, format in the following way: r"file path"
+output_dir = r"C:\Users\attil\OneDrive\TU_Delft\Project_SHM\Low_Features_500_500_CSV"
 os.makedirs(output_dir, exist_ok=True)  # Ensure output directory exists, else create it
 
 #Extract signals
@@ -47,7 +47,7 @@ for sample_key in signals.keys():
 
     #Convert to DataFrame
     df = pd.DataFrame(data)
-    df.dropna() 
+    df=df.dropna()
 
     #Save to CSV file
     csv_filename = os.path.join(output_dir, f"{sample_key}.csv")
