@@ -7,13 +7,14 @@ import matplotlib.pyplot as plt
 from math import pi
 #from CWT import time_array, amplitude_array, rise_time_array, Energy_array, Counts_array, Duration_array, RMS_array
 
-test_signal = True
+test_signal = False
+real_data = True
 
 ''' SORRY THIS SCRIPT IS RLLY MESSY, JUST TRYING STUFF OUT, DON'T USE THIS FOR ANYTHING'''
 
 # Load the CSV file
 # Replace 'your_file.csv' with your actual file path
-df = pd.read_csv('SP\\LowLevelFeaturesSample1.csv')
+df = pd.read_csv('SP\\Sample1Interp.csv')
 
 # Show available column names
 print("Column names:", df.columns.tolist())
@@ -58,6 +59,7 @@ if test_signal:
     plt.plot(t, Instantaneous_phase, label='Instantaneous Phase')
     plt.legend()
     plt.show()
+
 
 # X = np.array([[5., 2., 8., 13., 0.],
 #     [1., 0., 4., 7., 2.],

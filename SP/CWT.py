@@ -3,12 +3,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from numpy.fft import rfft, rfftfreq
 from scipy import stats
+import pandas as pd
+import numpy as np
 
 chirp_data = True
 test_data = True
-
-import pandas as pd
-import numpy as np
 
 # Load the CSV file
 # Replace 'your_file.csv' with your actual file path
@@ -52,34 +51,35 @@ def make_chirp(t, t0, a):
     return chirp, frequency
 
 
-# generate signal
-time = np.linspace(0, 1, 2000)
-chirp1, frequency1 = make_chirp(time, 0.2, 9)
-chirp2, frequency2 = make_chirp(time, 0.1, 5)
-chirp = chirp1 + 0.6 * chirp2
-chirp *= gaussian(time, 0.5, 0.2)
+if __name__ == "__main__":
+    # generate signal
+    time = np.linspace(0, 1, 2000)
+    chirp1, frequency1 = make_chirp(time, 0.2, 9)
+    chirp2, frequency2 = make_chirp(time, 0.1, 5)
+    chirp = chirp1 + 0.6 * chirp2
+    chirp *= gaussian(time, 0.5, 0.2)
 
-if chirp_data:
-    # plot signal
-    fig, axs = plt.subplots(2, 1, sharex=True)
-    axs[0].plot(time, chirp)
-    axs[1].plot(time, frequency1, label='freq 1')
-    axs[1].plot(time, frequency2, label='freq 2')
-    axs[1].set_yscale("log")
-    axs[1].set_xlabel("Time (s)")
-    axs[0].set_ylabel("Signal")
-    axs[1].set_ylabel("True frequency (Hz)")
-    plt.suptitle("Input signal")
-    plt.legend()
-    plt.show()
+    if chirp_data:
+        # plot signal
+        fig, axs = plt.subplots(2, 1, sharex=True)
+        axs[0].plot(time, chirp)
+        axs[1].plot(time, frequency1, label='freq 1')
+        axs[1].plot(time, frequency2, label='freq 2')
+        axs[1].set_yscale("log")
+        axs[1].set_xlabel("Time (s)")
+        axs[0].set_ylabel("Signal")
+        axs[1].set_ylabel("True frequency (Hz)")
+        plt.suptitle("Input signal")
+        plt.legend()
+        plt.show()
 
-if test_data:
-    # plot signal
-    plt.plot(time_array_truncated, amplitude_array_truncated)
-    plt.xlabel('Time')
-    plt.suptitle("Input signal")
-    plt.legend()
-    plt.show()
+    if test_data:
+        # plot signal
+        plt.plot(time_array_truncated, amplitude_array_truncated)
+        plt.xlabel('Time')
+        plt.suptitle("Input signal")
+        plt.legend()
+        plt.show()
 
 '''Apply the Continuous Wavelet Transform using a complex Morlet wavlet with a given center frequency and bandwidth (cmor1.5-1.0). 
     Then plot the scaleogram, which is the 2D plot of the signal strength vs. time and frequency.
