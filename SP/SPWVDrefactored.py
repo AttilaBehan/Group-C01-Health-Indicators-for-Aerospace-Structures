@@ -2,7 +2,7 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from Feature_Extraction import CSV_to_Array
+#from Feature_Extraction import CSV_to_Array
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -11,8 +11,14 @@ from scipy.signal.windows import gaussian
 from scipy.ndimage import convolve1d
 from tftb.processing import smoothed_pseudo_wigner_ville
 from sklearn.preprocessing import StandardScaler
+from scipy.signal import get_window
 
 random_signal = False
+CAI_signal = True
+Real_data = True
+
+if CAI_signal:
+    data = pd.read_csv('SP\\CAI_test_dataset_spec2_mts.csv')
 
 print('Reading CSV file...')
 #sample_amplitude, sample_risetime, sample_energy, sample_counts, sample_duration, sample_rms = CSV_to_Array('SP\\LowLevelFeaturesSample1.csv')
@@ -23,16 +29,6 @@ print(df)
 
 df = df.iloc[:6000]
 print(df.size)
-#df = df.iloc[::3]
-
-# Normalizing all col except time
-# df_to_normalize = df.drop(columns=['Time'])
-# scaler = StandardScaler()
-# df_normalized = pd.DataFrame(scaler.fit_transform(df_to_normalize), columns=df_to_normalize.columns)
-# df_normalized['Time'] = df['Time']
-# df_normalized = df_normalized[::30]
-# print(df_normalized.size)
-
 df_not_to_normalize = df.drop(columns=['Amplitude'])
 
 # Select the 'Amplitude' column
@@ -50,7 +46,7 @@ df_normalized = scaler.fit_transform(df_to_normalize)
 # If you want to convert it back to a pandas DataFrame (with the same index and column name)
 df_normalized = pd.DataFrame(df_normalized, columns=['Amplitude'], index=df.index)
 df_normalized['Time'] = df['Time']
-df_normalized = df_normalized[::10]
+#df_normalized = df_normalized[::10]
 print(df_normalized)
 
 print('Data collected')
@@ -213,9 +209,176 @@ if random_signal:
     plt.show()
 
 
+if Real_data:
+    # Load AE data (replace with your actual file path)
+    df = pd.read_csv("SP\\Sample1Interp.csv")
+
+    # Step 1: Group by cycle (Time column) and compute per-cycle features
+    grouped = df.groupby('Time')
+
+    # Define aggregations for useful features
+    agg_df = grouped.agg({
+        'Amplitude': ['mean', 'std', 'max', 'min'],
+        'Energy': ['sum', 'mean'],
+        'Counts': ['sum'],
+        'Duration': ['mean'],
+        'RMS': ['mean'],
+        'Rise-Time': ['mean'],
+    })
+
+    # Step 2: Flatten the MultiIndex column names
+    agg_df.columns = ['_'.join(col) for col in agg_df.columns]
+    agg_df = agg_df.reset_index()
+
+    # Step 3: Add AE event count per cycle
+    agg_df['Num_Events'] = grouped.size().values
+
+    # Step 4: Handle NaNs (e.g., std when only one AE event per cycle)
+    agg_df.fillna(0, inplace=True)  # Or use a different strategy like interpolation
+
+    # Step 5: Apply rolling smoothing (e.g., 5-cycle window)
+    window_size = 5
+    smoothed_df = agg_df.copy()
+    rolling_cols = [col for col in agg_df.columns if col not in ['Time']]  # exclude 'Time'
+
+    for col in rolling_cols:
+        smoothed_df[f'{col}_smoothed'] = agg_df[col].rolling(window=window_size, min_periods=1).mean()
+
+    # Step 6: Preview
+    print(smoothed_df.head())
+
+    # Optional: Save to CSV
+    smoothed_df.to_csv("Sample1_cycle_level_features_smoothed.csv", index=False)
+    
+
+    # Applying SPWVD:
+
+    # Example: using smoothed energy values as the signal
+    signal = smoothed_df['Energy_sum_smoothed'].values
+    signal = np.nan_to_num(signal)  # Replace NaNs or infs
+    downsample_factor = 10
+    trunkation_loc = 4000
+    downsampled_signal = signal[:trunkation_loc]
+    print('downsampled signal:', downsampled_signal)
+
+    # Apply SPWVD to the downsampled signal    
+
+    def spwvd(x, fs, window_time=None, window_freq=None, Ntime=None, Nfreq=None):
+        """
+        Smoothed Pseudo Wigner-Ville Distribution
+        
+        Parameters:
+        x - input signal
+        fs - sampling frequency
+        window_time - time smoothing window (default: 128-point Hamming)
+        window_freq - frequency smoothing window (default: 128-point Hamming)
+        Ntime - time window length
+        Nfreq - frequency window length
+        """
+        N = len(x)
+        
+        # Default parameters
+        if Ntime is None:
+            Ntime = min(129, N//4)
+        if Nfreq is None:
+            Nfreq = min(129, N//4)
+        if window_time is None:
+            window_time = get_window('hamming', Ntime)
+        if window_freq is None:
+            window_freq = get_window('hamming', Nfreq)
+        
+        # Normalize windows
+        window_time = window_time / np.sum(window_time)
+        window_freq = window_freq / np.sum(window_freq)
+        
+        # Initialize output
+        tfr = np.zeros((N, N), dtype=complex)
+        
+        # Compute analytic signal
+        x_analytic = np.fft.fft(x)
+        x_analytic[N//2+1:] = 0
+        x_analytic = np.fft.ifft(x_analytic)
+        
+        # Compute Wigner-Ville with smoothing
+        for n in range(N):
+            tau_max = min(n, N-1-n, Ntime//2)
+            tau = np.arange(-tau_max, tau_max+1)
+            indices = n + tau
+            product = x_analytic[n + tau] * np.conj(x_analytic[n - tau])
+            tfr[n, :] = np.fft.fft(product * window_time[tau_max + tau], N)
+        
+        # Frequency smoothing
+        for m in range(N):
+            nu_max = min(m, N-1-m, Nfreq//2)
+            nu = np.arange(-nu_max, nu_max+1)
+            tfr[:, m] = np.convolve(tfr[:, m], window_freq[nu_max + nu], mode='same')
+        
+        # Time-frequency representation
+        t = np.arange(N) / fs
+        f = np.fft.fftfreq(N, 1/fs)[:N//2]
+        tfr = tfr[:, :N//2]
+        
+        return t, f, np.abs(tfr)
+
+    # Example usage
+    fs = downsampled_signal.shape[0]
+    print('fs:', fs)
+    time = np.arange(1, fs+1)
+    time.reshape(-1, 1)
+    
+    signal = downsampled_signal
+    signal.reshape(-1, 1)
+    print(time.shape, signal.shape)
+
+    fs = 2
+
+    t, f, tfr = spwvd(signal, fs)
+
+    # Plot
+    plt.pcolormesh(time, f, 10 * np.log10(tfr.T), shading='gouraud')
+    plt.ylabel('Frequency [Hz]')
+    plt.xlabel('Time [cycles]')
+    plt.title('Smoothed Pseudo Wigner-Ville Distribution (Custom Implementation)')
+    plt.colorbar(label='Power [dB]')
+    #plt.ylim(0, 300)
+    plt.show()
+
+    result = smoothed_pseudo_wigner_ville(downsampled_signal)
+
+    # Inspect the result
+    print(type(result))  # Check the type of the result to understand the structure
+
+    # It's likely a tuple with the first element as the time-frequency representation (TFR)
+    tfr = result[0]  # Time-frequency representation
+    # Inspect the shape of tfr
+    print(f"Shape of tfr: {tfr.shape}")
+    # If tfr is 1D, reshape it to 2D for plotting
+    if tfr.ndim == 1:
+        tfr = np.expand_dims(tfr, axis=0)
+
+    t = result[1]    # Time axis
+    f = result[2]    # Frequency axis
+
+    #tfr, t, f = smoothed_pseudo_wigner_ville(downsampled_signal)
+
+    # Plot the result
+    plt.figure(figsize=(10, 6))
+    plt.pcolormesh(t, f, np.abs(tfr), shading='auto')
+    plt.xlabel("Cycle")
+    plt.ylabel("Pseudo-frequency (cycles⁻¹)")
+    plt.title("Smoothed Pseudo Wigner-Ville Distribution (SPWVD)")
+    plt.colorbar(label='Magnitude')
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+
+
 # Try real data
 print('Starting SPWVD...')
-#fs_Sample1 = len(sample_energy)/2931*2
+# fs_Sample1 = len(sample_energy)/2931*2
 # spwvd_Sample1 = spwvd(df["Amplitude"], time_smoothing=20, freq_smoothing=15)
 # magnitude_Sample1 = np.abs(spwvd_Sample1)
 
@@ -251,263 +414,3 @@ plt.show()
 # plt.title("Smoothed Pseudo Wigner-Ville Distribution (SPWVD)")
 # plt.colorbar(label="Amplitude")
 # plt.show()
-
-# Features
-
-# # --- Instat=ntaneous energy over time ---
-# energy_over_time = magnitude.sum(axis=1)
-
-# # --- Instantaneous Frequency (energy-weighted mean frequency) ---
-# weighted_freq = (magnitude * freqs[np.newaxis, :]).sum(axis=1) / (energy_over_time + 1e-10)
-
-# # --- Peak Frequency over time (frequency with highest energy at each time slice) ---
-# peak_freq = freqs[np.argmax(magnitude, axis=1)]
-
-# # --- Frequency Bandwidth over time ---
-# # Compute standard deviation (energy-weighted)
-# mean_sq = (magnitude * (freqs[np.newaxis, :] ** 2)).sum(axis=1) / (energy_over_time + 1e-10)
-# bandwidth = np.sqrt(mean_sq - weighted_freq**2)
-
-# # --- Spectral Entropy over time ---
-# prob_dist = magnitude / (magnitude.sum(axis=1, keepdims=True) + 1e-10)
-# entropy = -np.sum(prob_dist * np.log2(prob_dist + 1e-10), axis=1)
-
-# # --- Frequency Centroid over entire signal (already done) ---
-# freq_centroid = (magnitude * freqs[np.newaxis, :]).sum() / (magnitude.sum() + 1e-10)
-
-
-# Plotting SPWVD and WVD
-# plt.figure(figsize=(12, 6))
-
-# plt.subplot(1, 2, 1)
-# plt.imshow(np.abs(spwvd_matrix_v1), origin='lower', aspect='auto',
-#            extent=[0, 1, 0, fs], cmap='jet')
-# plt.title('SPWVD – Version 1 (FFT-based)')
-# plt.xlabel('Time [s]')
-# plt.ylabel('Frequency [Hz]')
-# plt.colorbar()
-
-# plt.subplot(1, 2, 2)
-# plt.imshow(np.abs(wvd_matrix), origin='lower', aspect='auto',
-#            extent=[0, 1, 0, fs], cmap='jet')
-# plt.title('WVD – Version 1 (FFT-based)')
-# plt.xlabel('Time [s]')
-# plt.ylabel('Frequency [Hz]')
-# plt.colorbar()
-# plt.tight_layout()
-# plt.show()
-
-print('Plotting results...')
-
-plt.figure(figsize=(12, 6))
-plt.imshow(np.abs(spwvd_Sample1), origin='lower', aspect='auto',
-           extent=[0, 1, 0, fs_Sample1], cmap='jet')
-plt.title('SPWVD – Sample 1 Energy (FFT-based)')
-plt.xlabel('Time [s]')
-plt.ylabel('Frequency [Hz]')
-plt.colorbar()
-
-plt.tight_layout()
-plt.show()
-
-# Plot features
-
-# fig, axs = plt.subplots(5, 1, figsize=(12, 10), sharex=True)
-
-# axs[0].plot(t, energy_over_time)
-# axs[0].set_ylabel('Energy')
-# axs[0].set_title('Instantaneous Energy')
-
-# axs[1].plot(t, weighted_freq)
-# axs[1].set_ylabel('Freq [Hz]')
-# axs[1].set_title('Instantaneous Frequency (Mean)')
-
-# axs[2].plot(t, peak_freq)
-# axs[2].set_ylabel('Freq [Hz]')
-# axs[2].set_title('Peak Frequency')
-
-# axs[3].plot(t, bandwidth)
-# axs[3].set_ylabel('Hz')
-# axs[3].set_title('Frequency Bandwidth')
-
-# axs[4].plot(t, entropy)
-# axs[4].set_ylabel('Entropy')
-# axs[4].set_title('Spectral Entropy')
-# axs[4].set_xlabel('Time [s]')
-
-# plt.tight_layout()
-# plt.show()
-
-# # --- Print the frequency centroid ---
-# print(f"Overall Frequency Centroid: {freq_centroid:.2f} Hz")
-
-
-# def wvd(x, fs):
-#     """
-#     Compute the Wigner-Ville Distribution (WVD) using FFT for efficiency.
-    
-#     Parameters:
-#         x (numpy array): Input signal (1D).
-#         fs (float): Sampling frequency.
-    
-#     Returns:
-#         numpy array: Time-frequency representation (WVD).
-#     """
-#     N = len(x)
-#     x = np.pad(x, (N//2, N//2), mode='constant')  # Zero-padding
-#     X = hilbert(x)  # Compute the analytic signal
-    
-#     WVD = np.zeros((N, N), dtype=complex)  # Time-frequency matrix
-
-#     for t in range(N):  # Time index
-#         tau_max = min(t, N - t)  # Prevent out-of-bounds indexing
-#         signal_product = X[t + tau_max::-1][:2*tau_max + 1] * np.conj(X[t - tau_max:t + tau_max + 1])
-#         WVD[t, :] = np.fft.fftshift(np.fft.fft(signal_product, N))  # FFT for frequency domain
-    
-#     return np.abs(WVD)
-
-# def spwvd(x, fs, time_smoothing=10, freq_smoothing=10):
-#     """
-#     Compute the Smoothed Pseudo Wigner-Ville Distribution (SPWVD).
-    
-#     Parameters:
-#         x (numpy array): Input signal (1D).
-#         fs (float): Sampling frequency.
-#         time_smoothing (int): Gaussian smoothing in time domain.
-#         freq_smoothing (int): Gaussian smoothing in frequency domain.
-    
-#     Returns:
-#         numpy array: Smoothed Time-Frequency representation.
-#     """
-#     WVD = wvd(x, fs)  # Compute raw WVD
-    
-#     # Apply time smoothing (Gaussian kernel)
-#     time_kernel = gaussian(WVD.shape[0], time_smoothing) / np.sum(gaussian(WVD.shape[0], time_smoothing))
-#     WVD_smoothed_time = np.apply_along_axis(lambda m: np.convolve(m, time_kernel, mode='same'), axis=0, arr=WVD)
-    
-#     # Apply frequency smoothing (Gaussian kernel)
-#     freq_kernel = gaussian(WVD.shape[1], freq_smoothing) / np.sum(gaussian(WVD.shape[1], freq_smoothing))
-#     SPWVD = np.apply_along_axis(lambda m: np.convolve(m, freq_kernel, mode='same'), axis=1, arr=WVD_smoothed_time)
-    
-#     return SPWVD
-
-# # Example: Chirp signal
-# fs = 1000  # Sampling frequency
-# t = np.linspace(0, 1, fs)  # Time vector
-# x = chirp(t, f0=100, t1=1, f1=400, method='quadratic') + chirp(t, f0=350, t1=1, f1=50, method='quadratic')
-
-# # Compute SPWVD
-# spwvd_result = spwvd(x, fs, time_smoothing=20, freq_smoothing=20)
-
-# # Plot the SPWVD
-# plt.figure(figsize=(10, 6))
-# plt.imshow(spwvd_result, aspect='auto', cmap='jet', origin='lower', extent=[0, 1, 0, fs / 2])
-# plt.title('Smoothed Pseudo Wigner-Ville Distribution (SPWVD)')
-# plt.xlabel('Time [s]')
-# plt.ylabel('Frequency [Hz]')
-# plt.colorbar(label='Magnitude')
-# plt.show()
-
-
-# '''
-
-# New chatgpt optimized method
-
-# "Let's refactor your Wigner-Ville Distribution (WVD) and Smoothed Pseudo Wigner-Ville Distribution (SPWVD) 
-# implementations in a cleaner, more efficient, and mathematically correct way, using FFT-based computation, 
-# which is standard in time-frequency analysis.
-
-# Key improvements:
-#     - Use lag-domain formulation.
-#     - Apply FFT over the lag dimension to transform to frequency domain.
-#     - Ensure correct zero-padding and indexing.
-#     - Use Gaussian smoothing via convolution in both time and frequency directions.
-
-# Benefits of refactoring:
-#     - Robust index handling (no IndexError).
-#     - FFT-based frequency domain representation (standard method).
-#     - Efficient and clean smoothing using convolve1d.
-#     - Easy to adapt to other kernel types if needed."
-
-# '''
-
-# def wvd_new(signal, fs):
-#     """
-#     Efficient Wigner-Ville Distribution using FFT-based method.
-#     """
-#     N = len(signal)
-#     wvd_matrix = np.zeros((N, N), dtype=complex)
-
-#     x = signal
-#     for t in range(N):
-#         tau_max = min(t, N - t - 1)
-#         for tau in range(-tau_max, tau_max + 1):
-#             n1 = t + tau
-#             n2 = t - tau
-#             if 0 <= n1 < N and 0 <= n2 < N:
-#                 wvd_matrix[t, tau % N] = x[n1] * np.conj(x[n2])
-
-#     # FFT along the lag (2nd) dimension to get frequency representation
-#     wvd_matrix = np.fft.fftshift(np.fft.fft(wvd_matrix, axis=1), axes=1)
-#     return np.real(wvd_matrix)
-
-# def spwvd_new(signal, fs, time_smoothing=15, freq_smoothing=15):
-#     """
-#     Smoothed Pseudo Wigner-Ville Distribution with Gaussian smoothing.
-#     """
-#     N = len(signal)
-#     # Step 1: Compute WVD
-#     W = wvd_new(signal, fs)
-
-#     # Step 2: Time smoothing (Gaussian along time axis)
-#     time_kernel = gaussian(N, std=time_smoothing)
-#     time_kernel /= np.sum(time_kernel)
-#     W_smoothed_time = convolve1d(W, time_kernel, axis=0, mode='constant')
-
-#     # Step 3: Frequency smoothing (Gaussian along frequency axis)
-#     freq_kernel = gaussian(N, std=freq_smoothing)
-#     freq_kernel /= np.sum(freq_kernel)
-#     W_smoothed = convolve1d(W_smoothed_time, freq_kernel, axis=1, mode='constant')
-
-#     return W_smoothed
-
-# # Create a multi-component chirp signal
-# fs = 1000  # Hz
-# t = np.linspace(0, 1, fs)
-# x = chirp(t, f0=100, f1=400, t1=1, method='quadratic') + chirp(t, f0=350, f1=50, t1=1, method='quadratic')
-
-# # Compute new SPWVD
-# spwvd_matrix = spwvd_new(x, fs, time_smoothing=20, freq_smoothing=20)
-
-# # Old SPWVD
-# spwvd_result = spwvd(x, fs, time_smoothing=20, freq_smoothing=20)
-
-# # Plotting new SPWVD
-# plt.figure(figsize=(10, 6))
-# plt.imshow(np.abs(spwvd_matrix.T), origin='lower', aspect='auto',
-#            extent=[0, 1, 0, fs], cmap='jet')
-# plt.title('New Smoothed Pseudo Wigner-Ville Distribution (SPWVD)')
-# plt.xlabel('Time [s]')
-# plt.ylabel('Frequency [Hz]')
-# plt.colorbar(label='Magnitude')
-# plt.tight_layout()
-# plt.show()
-
-# # Plot the old SPWVD
-# plt.figure(figsize=(10, 6))
-# plt.subplot(1, 2, 1)
-# plt.imshow(spwvd_result, aspect='auto', cmap='jet', origin='lower', extent=[0, 1, 0, fs / 2])
-# plt.title('Old Smoothed Pseudo Wigner-Ville Distribution (SPWVD)')
-# plt.xlabel('Time [s]')
-# plt.ylabel('Frequency [Hz]')
-# plt.colorbar(label='Magnitude')
-# plt.subplot(1, 2, 2)
-# plt.imshow(np.abs(spwvd_matrix.T), origin='lower', aspect='auto',
-#            extent=[0, 1, 0, fs], cmap='jet')  # Time frequency distribution might have complex values, take abs of matrix vals
-# plt.title('New Smoothed Pseudo Wigner-Ville Distribution (SPWVD)')
-# plt.xlabel('Time [s]')
-# plt.ylabel('Frequency [Hz]')
-# plt.colorbar(label='Magnitude')
-# plt.tight_layout()
-# plt.show()
-
