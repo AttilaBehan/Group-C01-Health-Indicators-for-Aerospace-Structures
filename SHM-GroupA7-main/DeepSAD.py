@@ -427,43 +427,36 @@ def load_data(dir, filename, labelled_fraction, ignore):
     data = None
     labels = None
     first = True  # First sample flag
-
+    for i, name in enumerate(filename):
+        filename[i] = name +".csv"
+    filename = set(filename)
     # Walk directory
     for root, dirs, files in os.walk(dir):
         for name in files:
-            if name == filename+".csv":  # If correct file to be included in training data
+            if name in filename:  # If correct file to be included in training data
                 read_data = np.array(pd.read_csv(os.path.join(root, name)))
                 # Set data and labels arrays to data from first sample
                 if first:
-                    data = np.array([read_data])
+                    data = [read_data]
                     labels = np.array([1.0])
                     first = False
-
                 # Concatenate additional samples
                 else:
-                    data = np.concatenate((data, [read_data]))
+                    data.append(read_data)
                     labels = np.append(labels, 0)  # Default label is 0
                     labels = labels.reshape(-1,1)
-
     if labels is not None and len(labels) > 0:
-
-        if ignore != 0:
-            data = data[0:-1 * ignore]
-            labels = labels[0:-1 * ignore]
-
         # Add artificial labels
         teol = data.shape[0]
         x_values = np.arange(0, teol+1)
         #health_indicators = ((x_values ** 2) / (teol ** 2)) * 2 - 1  # Equation scaled from -1 to 1
         health_indicators = 1-2*x_values/teol
-
         for i in range(int(len(labels) * labelled_fraction)):  # Originally 5
-            labels[i] = health_indicators[i]  # Healthy
+            labels[i] = health_indicators[0]  # Healthy
 
         for i in range(int(len(labels) * labelled_fraction)):  # Originally 3
-            labels[-i - 1] = health_indicators[-i - 1]  # Unhealthy
-
-        return torch.tensor(data, dtype=torch.float32), torch.tensor(labels, dtype=torch.float)
+            labels[-i - 1] = health_indicators[1]  # Unhealthy
+        return torch.tensor(data, dtype=torch.float32), torch.tensor(labels, dtype=torch.float32)
     else:
         raise ValueError("No data loaded or empty dataset found.")
 
@@ -657,7 +650,7 @@ def DeepSAD_train_run(dir, freq, file_name, opt=False):
             sample = temp_samples[count]
 
             # Load training sample
-            temp_data, temp_targets = load_data(dir, sample, labelled_fraction, ignore)
+            temp_data, temp_targets = load_data(dir, samples, labelled_fraction, ignore)
             # Create new arrays for training data and targets
             if first:
                 arr_data = copy.deepcopy(temp_data)
@@ -667,7 +660,6 @@ def DeepSAD_train_run(dir, freq, file_name, opt=False):
             # Concatenate data and targets from other samples
             else:
                 arr_data = np.concatenate((arr_data, temp_data), axis=1)
-                print(temp_targets.shape, arr_targets.shape)
                 arr_targets = np.concatenate((arr_targets, temp_targets))
                 
 
@@ -682,7 +674,7 @@ def DeepSAD_train_run(dir, freq, file_name, opt=False):
 
         # Create list of data dimensions to set number of input nodes in neural network
         size = [train_data.shape[1], train_data.shape[2]]
-        print(train_data.shape, semi_targets.shape)
+        print(size)
         # Convert to dataset and create loader
         train_dataset = TensorDataset(train_data, semi_targets)
 
