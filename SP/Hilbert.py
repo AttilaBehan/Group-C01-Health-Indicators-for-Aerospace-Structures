@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from math import pi
 #from CWT import time_array, amplitude_array, rise_time_array, Energy_array, Counts_array, Duration_array, RMS_array
 
-test_signal = False
+test_signal = True
 real_data = True
 
 ''' SORRY THIS SCRIPT IS RLLY MESSY, JUST TRYING STUFF OUT, DON'T USE THIS FOR ANYTHING'''
@@ -42,7 +42,7 @@ if test_signal:
     t = np.linspace(0, 1, fs)  # Time vector
     x = chirp(t, f0=100, t1=1, f1=400, method='quadratic') + chirp(t, f0=350, t1=1, f1=50, method='quadratic')
 
-    analytic_signal = hilbert(x)
+    analytic_signal = np.imag(hilbert(x))
     amplitude_envelope = np.abs(analytic_signal)
     Instantaneous_phase = np.unwrap(np.angle(analytic_signal))
     Instantaneous_frequency = np.diff(Instantaneous_phase) / (2 * pi) *fs
