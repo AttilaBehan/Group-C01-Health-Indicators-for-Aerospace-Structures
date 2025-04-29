@@ -13,6 +13,135 @@ from scipy.ndimage import convolve1d
 from tftb.processing import smoothed_pseudo_wigner_ville
 from sklearn.preprocessing import StandardScaler
 from scipy.signal import get_window
+from Data_processing_SPWVD import downsample_factor, truncation_loc, overlap_window
+
+# Windowed data file names
+Windowed_filenames = ['Sample1_window_level_features_smoothed.csv', 'Sample1_window_level_features_smoothed.csv']
+
+# Sampling frequency
+fs = 1/(0.5*downsample_factor)
+
+# Main SPWVD function:
+
+def spwvd(x, fs, window_time=None, window_freq=None, Ntime=None, Nfreq=None):
+    """
+    Smoothed Pseudo Wigner-Ville Distribution
+    
+    Parameters:
+    x - input signal
+    fs - sampling frequency
+    window_time - time smoothing window (default: 128-point Hamming)
+    window_freq - frequency smoothing window (default: 128-point Hamming)
+    Ntime - time window length
+    Nfreq - frequency window length
+    """
+    N = len(x)
+    
+    # Default parameters
+    if Ntime is None:
+        Ntime = min(129, N//4)
+    if Nfreq is None:
+        Nfreq = min(129, N//4)
+    if window_time is None:
+        window_time = get_window('hamming', Ntime)
+    if window_freq is None:
+        window_freq = get_window('hamming', Nfreq)
+    
+    # Normalize windows
+    window_time = window_time / np.sum(window_time)
+    window_freq = window_freq / np.sum(window_freq)
+    
+    # Initialize tfr output array
+    tfr = np.zeros((N, N), dtype=complex)
+    
+    # Compute analytic signal
+    x_analytic = np.fft.fft(x)
+    x_analytic[N//2+1:] = 0
+    x_analytic = np.fft.ifft(x_analytic)
+    
+    # Compute Wigner-Ville with smoothing
+    ''' tau = time lag, nu = freq lag '''
+
+    # Time smoothing
+    for n in range(N):
+        tau_max = min(n, N-1-n, Ntime//2) # Maximum possible lag without out-of-bounds
+        tau = np.arange(-tau_max, tau_max+1) # Symmetric lags around n
+        product = x_analytic[n + tau] * np.conj(x_analytic[n - tau]) # Autocorrelation
+        tfr[n, :] = np.fft.fft(product * window_time[tau_max + tau], N) # Windowed & Fourier-transformed
+    
+    # Frequency smoothing
+    for m in range(N):
+        nu_max = min(m, N-1-m, Nfreq//2) # Limits to avoid boundary issues
+        nu = np.arange(-nu_max, nu_max+1) # Frequency shifts
+        tfr[:, m] = np.convolve(tfr[:, m], window_freq[nu_max + nu], mode='same')
+    
+    # Compile output time-frequency representation
+    t = np.arange(N) / fs
+    f = np.fft.fftfreq(N, 1/fs)[:N//2]
+    tfr = tfr[:, :N//2]
+    
+    return t, f, np.abs(tfr)
+
+def group_spwvd(group):
+    return spwvd(group.values, fs)
+
+def apply_SPWVD_to_windowed_data(filename):
+    # Load dataframe 
+    df = pd.read_csv(filename)
+
+    # Step 1: Group by window and compute SPWVD per window (spwvd_results is a Pandas Series with each row being a tuple (t, f, tfr))
+    spwvd_results = df.groupby('Data_Window_idx')['Energy_sum_smoothed'].apply(group_spwvd)
+
+    # accessing different windows results
+    first_window_t, first_window_f, first_window_tfr = spwvd_results.iloc[0]
+
+    first_group = df.groupby('Data_Window_idx').get_group(0)
+    first_window_time_array = first_group['Time_cycle'].values
+
+    time = first_window_time_array
+    tfr = first_window_tfr
+    f = first_window_f
+
+    # Step 2: Plot
+    plt.pcolormesh(time, f, 10 * np.log10(tfr.T), shading='gouraud')
+    plt.ylabel('Frequency [Hz]')
+    plt.xlabel('Time [cycles]')
+    plt.title('Smoothed Pseudo Wigner-Ville Distribution (First window)')
+    plt.colorbar(label='Magnitude [dB]')
+    #plt.ylim(0, 300)
+    plt.show()
+
+apply_SPWVD_to_windowed_data('Sample1_window_level_features_smoothed.csv')
+
+# # Using SPWVD function (only on first window)
+# time = downsampled_time_cycles[0]
+# time.reshape(-1, 1)
+
+# signal = downsampled_signals[0]
+# signal.reshape(-1, 1)
+# print(time.shape, signal.shape)
+
+# fs = 1/(0.5*downsample_factor)
+
+# t, f, tfr = spwvd(signal, fs)
+
+# # Plot
+# plt.pcolormesh(time, f, 10 * np.log10(tfr.T), shading='gouraud')
+# plt.ylabel('Frequency [Hz]')
+# plt.xlabel('Time [cycles]')
+# plt.title('Smoothed Pseudo Wigner-Ville Distribution (Custom Implementation)')
+# plt.colorbar(label='Magnitude [dB]')
+# #plt.ylim(0, 300)
+# plt.show()
+
+# # Plot
+# plt.pcolormesh(time, f, tfr.T, shading='gouraud')
+# plt.ylabel('Frequency [Hz]')
+# plt.xlabel('Time [cycles]')
+# plt.title('Smoothed Pseudo Wigner-Ville Distribution (Custom Implementation)')
+# plt.colorbar(label='Magnitude')
+# #plt.ylim(0, 300)
+# plt.show()
 
 CAI_signal = False
 Real_data = True
@@ -85,6 +214,7 @@ if Real_data:
             downsampled_time_cycles[i,:] = time_cycles[start:stop:downsample_factor]
         print('downsampled signals:', downsampled_signals)
         # print('downsampled time cycles:', downsampled_time_cycles)
+        
     else:
         downsampled_signal = signal[::downsample_factor]
         downsampled_time_cycles = time_cycles[::downsample_factor]

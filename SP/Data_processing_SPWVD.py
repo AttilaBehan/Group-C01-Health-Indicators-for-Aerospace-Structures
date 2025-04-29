@@ -1,16 +1,26 @@
 import pandas as pd
 import numpy as np
 import math
-''' The SPWVD code requires some additional processing which is done here'''
+''' 
+The SPWVD code requires some additional processing and windowing which is done here, this code has the following structure:
 
+    1. Input and output file names defined as well as which data columns to use
+    2. Downsampling parameters defined
+    3. Functions for smoothing, downsampling and windowing, and only downsampling defined
+    4. Functions applied to all input files and downsampled files saved'''
+
+# 1. Input and output file names defined as well as which data columns to use
 csv_files = ["SP\\Sample1Interp.csv", "SP\\Sample1Interp.csv"]
-
 smoothing_output_filenames = ["Sample1_cycle_level_features_smoothed.csv", "Sample1_cycle_level_features_smoothed.csv"]
-
 windowed_output_filenames = ["Sample1_window_level_features_smoothed.csv", "Sample1_window_level_features_smoothed.csv"]
-
 relevant_col_names = ['Time','Amplitude_mean','Amplitude_std','Amplitude_max','Amplitude_min','Energy_sum','Energy_mean','Counts_sum','Duration_mean','RMS_mean','Rise-Time_mean','Amplitude_mean_smoothed','Amplitude_std_smoothed','Amplitude_max_smoothed','Amplitude_min_smoothed','Energy_sum_smoothed','Energy_mean_smoothed','Counts_sum_smoothed','Duration_mean_smoothed','RMS_mean_smoothed','Rise-Time_mean_smoothed']
 
+# 2. Downsampling parameters defined
+downsample_factor=10 
+truncation_loc=40000 
+overlap_window=200
+
+# 3. Functions for smoothing, downsampling and windowing, and only downsampling defined
 def generate_smoothed_df(filename, output_filename, smoothing_window_size=5):
     # Load dataframe 
     df = pd.read_csv(filename)
@@ -134,8 +144,9 @@ def get_simple_downsampled_smoothe_data(csv_filename, csv_output_filename, relev
     print(f"Downsampled data saved as {csv_output_filename}")
 
 
+# 4. Functions applied to all input files and downsampled files saved
 for i, csv_file in enumerate(csv_files):
     smoothing_output_filename = smoothing_output_filenames[i]
     windowed_output_filename = windowed_output_filenames[i]
     generate_smoothed_df(csv_file, smoothing_output_filename)
-    get_downsampled_and_windowed_smoothe_data(smoothing_output_filename, windowed_output_filename, relevant_col_names, downsample_factor=10, truncation_loc=40000, overlap_window=200)
+    get_downsampled_and_windowed_smoothe_data(smoothing_output_filename, windowed_output_filename, relevant_col_names, downsample_factor, truncation_loc, overlap_window)
