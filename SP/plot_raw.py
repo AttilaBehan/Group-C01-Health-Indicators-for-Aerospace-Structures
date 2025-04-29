@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-for sample_number in range(1, 13):
+for sample_number in range(1, 2):
     file_path = f"C:/Users/macpo/Desktop/TU Delft/Y2/Q3/project/Low_Features_500_500_CSV/Sample{sample_number}.csv"
     
     # Load data with optimized dtype
