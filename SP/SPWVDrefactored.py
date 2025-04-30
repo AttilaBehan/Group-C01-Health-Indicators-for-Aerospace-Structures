@@ -6,6 +6,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import numpy as np
 import math
 import pandas as pd
+import torch
 import matplotlib.pyplot as plt
 from scipy.signal import hilbert, chirp
 from scipy.signal.windows import gaussian
@@ -15,8 +16,26 @@ from sklearn.preprocessing import StandardScaler
 from scipy.signal import get_window
 from Data_processing_SPWVD import downsample_factor, truncation_loc, overlap_window
 
+# Make this true if you want to plot one of the color plots to check
+plot_visual = True
+
+''' This file contains the main function which computes the SPWVD and one which applies this to the windowed 
+                                        csv files of the various signals which have been fully preprocessed. 
+
+    It currently has the following structure:
+     
+      1. Imported downsample factor (I am going to change the format of this later to store these values elsewhere in a class)
+      2. Array of file names to be processed and one of signal columns to process
+      3. Definition of the sampling frequency based on the individual cycle length and downsampling factor 
+      4. Main SPWVD funtion, apply function, and fuction which applies main function to windowed data files
+                ^^^ as of now the function is not complete (only calculates it for the first window, I will complete this nexrt session)'''
+
 # Windowed data file names
 Windowed_filenames = ['Sample1_window_level_features_smoothed.csv', 'Sample1_window_level_features_smoothed.csv']
+
+# Signal columns to be used
+relevant_col_names = ['Amplitude_mean','Amplitude_std','Amplitude_max','Amplitude_min','Energy_sum','Energy_mean','Counts_sum','Duration_mean','RMS_mean','Rise-Time_mean','Amplitude_mean_smoothed','Amplitude_std_smoothed','Amplitude_max_smoothed','Amplitude_min_smoothed','Energy_sum_smoothed','Energy_mean_smoothed','Counts_sum_smoothed','Duration_mean_smoothed','RMS_mean_smoothed','Rise-Time_mean_smoothed']
+relevant_col_names = ['Energy_sum_smoothed','Amplitude_mean_smoothed','Amplitude_std_smoothed']
 
 # Sampling frequency
 fs = 1/(0.5*downsample_factor)
@@ -89,27 +108,60 @@ def apply_SPWVD_to_windowed_data(filename):
     # Load dataframe 
     df = pd.read_csv(filename)
 
-    # Step 1: Group by window and compute SPWVD per window (spwvd_results is a Pandas Series with each row being a tuple (t, f, tfr))
-    spwvd_results = df.groupby('Data_Window_idx')['Energy_sum_smoothed'].apply(group_spwvd)
+    N_windows = int(np.max(df['Data_Window_idx'].values) + 1)
 
-    # accessing different windows results
-    first_window_t, first_window_f, first_window_tfr = spwvd_results.iloc[0]
+    # Initialize place to store 
 
-    first_group = df.groupby('Data_Window_idx').get_group(0)
-    first_window_time_array = first_group['Time_cycle'].values
+    for i, col in enumerate(relevant_col_names):
+        # Step 1: Group by window and compute SPWVD per window (spwvd_results is a Pandas Series with each row being a tuple (t, f, tfr))
+        spwvd_results = df.groupby('Data_Window_idx')[col].apply(group_spwvd)
 
-    time = first_window_time_array
-    tfr = first_window_tfr
-    f = first_window_f
+        # Step 2: Initialize array for column to store frequency in (to add next to time)
+        frequency = []
+        time_dim = int(truncation_loc/downsample_factor)
+        freq_dim = int(time_dim/2)
+        tfr_per_window = torch.zeros(N_windows, time_dim, freq_dim)
+        for j in range(N_windows):
+            # accessing different windows results
+            window_t, window_f, window_tfr = spwvd_results.iloc[j]
 
-    # Step 2: Plot
-    plt.pcolormesh(time, f, 10 * np.log10(tfr.T), shading='gouraud')
-    plt.ylabel('Frequency [Hz]')
-    plt.xlabel('Time [cycles]')
-    plt.title('Smoothed Pseudo Wigner-Ville Distribution (First window)')
-    plt.colorbar(label='Magnitude [dB]')
-    #plt.ylim(0, 300)
-    plt.show()
+            group_current = df.groupby('Data_Window_idx').get_group(j)
+            window_time_array = group_current['Time_cycle'].values
+
+            time = window_time_array
+            tfr = window_tfr
+            f = window_f
+
+            frequency.append(f)
+            tfr_tensor = torch.from_numpy(tfr).float()
+            tfr_per_window[j] = tfr_tensor
+
+            print('Shape of tfr:', tfr.shape)
+            print('tfr', tfr)
+
+            if plot_visual and j==0:
+                # Plot logarithmic scale
+                plt.pcolormesh(time, f, 10 * np.log10(tfr.T), shading='gouraud')
+                plt.ylabel('Frequency [Hz]')
+                plt.xlabel('Time [cycles]')
+                plt.title(f'Smoothed Pseudo Wigner-Ville Distribution of {col} (First window)')
+                plt.colorbar(label='Magnitude [dB]')
+                #plt.ylim(0, 300)
+                plt.show()
+
+                # Plot normal scale
+                plt.pcolormesh(time, f, tfr.T, shading='auto')
+                plt.ylabel('Frequency [Hz]')
+                plt.xlabel('Time [cycles]')
+                plt.title(f'Smoothed Pseudo Wigner-Ville Distribution of {col} (First window)')
+                plt.colorbar(label='Magnitude')
+                #plt.ylim(0, 300)
+                plt.show()
+            
+        
+                
+        
+    
 
 apply_SPWVD_to_windowed_data('Sample1_window_level_features_smoothed.csv')
 
