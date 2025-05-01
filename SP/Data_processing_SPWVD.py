@@ -125,7 +125,10 @@ def get_downsampled_and_windowed_smoothe_data(csv_filename, output_folder, csv_o
     # Define number of datapoints and number of windows data is split into
     N_cycles_total = time_cycles.shape[0]
     print('total n of cycles:', N_cycles_total)
-    N_cycle_windows = math.floor(N_cycles_total/(truncation_loc-overlap_window))
+    N_cycle_windows = math.ceil(N_cycles_total/(truncation_loc-overlap_window))
+    x = (N_cycle_windows-1)*(truncation_loc-overlap_window)+overlap_window
+    if x>N_cycles_total:
+        N_cycle_windows-= 1
     print('N_cycle_windows:', N_cycle_windows)
 
     # Check downsampling factor matches with number of data points per window
