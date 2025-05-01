@@ -4,7 +4,9 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 #from Feature_Extraction import CSV_to_Array
 import numpy as np
+import math
 import pandas as pd
+import torch
 import matplotlib.pyplot as plt
 from scipy.signal import hilbert, chirp
 from scipy.signal.windows import gaussian
@@ -12,254 +14,264 @@ from scipy.ndimage import convolve1d
 from tftb.processing import smoothed_pseudo_wigner_ville
 from sklearn.preprocessing import StandardScaler
 from scipy.signal import get_window
+from Data_processing_SPWVD import downsample_factor, truncation_loc, overlap_window
 
-random_signal = False
-CAI_signal = True
+# Make this true if you want to plot one of the color plots to check
+plot_visual = True
+
+''' This file contains the main function which computes the SPWVD and one which applies this to the windowed 
+                                        csv files of the various signals which have been fully preprocessed. 
+
+    It currently has the following structure:
+     
+      1. Imported downsample factor (I am going to change the format of this later to store these values elsewhere in a class)
+      2. Array of file names to be processed and one of signal columns to process
+      3. Definition of the sampling frequency based on the individual cycle length and downsampling factor 
+      4. Main SPWVD funtion, apply function, and fuction which applies main function to windowed data files
+                ^^^ as of now the function is not complete (only calculates it for the first window, I will complete this nexrt session)'''
+
+# Windowed data file names
+Windowed_filenames = ['Sample1_window_level_features_smoothed.csv', 'Sample1_window_level_features_smoothed.csv']
+
+# Signal columns to be used
+relevant_col_names = ['Amplitude_mean','Amplitude_std','Amplitude_max','Amplitude_min','Energy_sum','Energy_mean','Counts_sum','Duration_mean','RMS_mean','Rise-Time_mean','Amplitude_mean_smoothed','Amplitude_std_smoothed','Amplitude_max_smoothed','Amplitude_min_smoothed','Energy_sum_smoothed','Energy_mean_smoothed','Counts_sum_smoothed','Duration_mean_smoothed','RMS_mean_smoothed','Rise-Time_mean_smoothed']
+relevant_col_names = ['Energy_sum_smoothed','Amplitude_mean_smoothed','Amplitude_std_smoothed']
+
+# Sampling frequency
+fs = 1/(0.5*downsample_factor)
+
+# Main SPWVD function:
+
+def spwvd(x, fs, window_time=None, window_freq=None, Ntime=None, Nfreq=None):
+    """
+    Smoothed Pseudo Wigner-Ville Distribution
+    
+    Parameters:
+    x - input signal
+    fs - sampling frequency
+    window_time - time smoothing window (default: 128-point Hamming)
+    window_freq - frequency smoothing window (default: 128-point Hamming)
+    Ntime - time window length
+    Nfreq - frequency window length
+    """
+    N = len(x)
+    
+    # Default parameters
+    if Ntime is None:
+        Ntime = min(129, N//4)
+    if Nfreq is None:
+        Nfreq = min(129, N//4)
+    if window_time is None:
+        window_time = get_window('hamming', Ntime)
+    if window_freq is None:
+        window_freq = get_window('hamming', Nfreq)
+    
+    # Normalize windows
+    window_time = window_time / np.sum(window_time)
+    window_freq = window_freq / np.sum(window_freq)
+    
+    # Initialize tfr output array
+    tfr = np.zeros((N, N), dtype=complex)
+    
+    # Compute analytic signal
+    x_analytic = np.fft.fft(x)
+    x_analytic[N//2+1:] = 0
+    x_analytic = np.fft.ifft(x_analytic)
+    
+    # Compute Wigner-Ville with smoothing
+    ''' tau = time lag, nu = freq lag '''
+
+    # Time smoothing
+    for n in range(N):
+        tau_max = min(n, N-1-n, Ntime//2) # Maximum possible lag without out-of-bounds
+        tau = np.arange(-tau_max, tau_max+1) # Symmetric lags around n
+        product = x_analytic[n + tau] * np.conj(x_analytic[n - tau]) # Autocorrelation
+        tfr[n, :] = np.fft.fft(product * window_time[tau_max + tau], N) # Windowed & Fourier-transformed
+    
+    # Frequency smoothing
+    for m in range(N):
+        nu_max = min(m, N-1-m, Nfreq//2) # Limits to avoid boundary issues
+        nu = np.arange(-nu_max, nu_max+1) # Frequency shifts
+        tfr[:, m] = np.convolve(tfr[:, m], window_freq[nu_max + nu], mode='same')
+    
+    # Compile output time-frequency representation
+    t = np.arange(N) / fs
+    f = np.fft.fftfreq(N, 1/fs)[:N//2]
+    tfr = tfr[:, :N//2]
+    
+    return t, f, np.abs(tfr)
+
+def group_spwvd(group):
+    return spwvd(group.values, fs)
+
+def apply_SPWVD_to_windowed_data(filename):
+    # Load dataframe 
+    df = pd.read_csv(filename)
+
+    N_windows = int(np.max(df['Data_Window_idx'].values) + 1)
+
+    # Initialize place to store 
+
+    for i, col in enumerate(relevant_col_names):
+        # Step 1: Group by window and compute SPWVD per window (spwvd_results is a Pandas Series with each row being a tuple (t, f, tfr))
+        spwvd_results = df.groupby('Data_Window_idx')[col].apply(group_spwvd)
+
+        # Step 2: Initialize array for column to store frequency in (to add next to time)
+        frequency = []
+        time_dim = int(truncation_loc/downsample_factor)
+        freq_dim = int(time_dim/2)
+        tfr_per_window = torch.zeros(N_windows, time_dim, freq_dim)
+        for j in range(N_windows):
+            # accessing different windows results
+            window_t, window_f, window_tfr = spwvd_results.iloc[j]
+
+            group_current = df.groupby('Data_Window_idx').get_group(j)
+            window_time_array = group_current['Time_cycle'].values
+
+            time = window_time_array
+            tfr = window_tfr
+            f = window_f
+
+            frequency.append(f)
+            tfr_tensor = torch.from_numpy(tfr).float()
+            tfr_per_window[j] = tfr_tensor
+
+            print('Shape of tfr:', tfr.shape)
+            print('tfr', tfr)
+
+            if plot_visual and j==0:
+                # Plot logarithmic scale
+                plt.pcolormesh(time, f, 10 * np.log10(tfr.T), shading='gouraud')
+                plt.ylabel('Frequency [Hz]')
+                plt.xlabel('Time [cycles]')
+                plt.title(f'Smoothed Pseudo Wigner-Ville Distribution of {col} (First window)')
+                plt.colorbar(label='Magnitude [dB]')
+                #plt.ylim(0, 300)
+                plt.show()
+
+                # Plot normal scale
+                plt.pcolormesh(time, f, tfr.T, shading='auto')
+                plt.ylabel('Frequency [Hz]')
+                plt.xlabel('Time [cycles]')
+                plt.title(f'Smoothed Pseudo Wigner-Ville Distribution of {col} (First window)')
+                plt.colorbar(label='Magnitude')
+                #plt.ylim(0, 300)
+                plt.show()
+            
+        
+                
+        
+    
+
+apply_SPWVD_to_windowed_data('Sample1_window_level_features_smoothed.csv')
+
+# # Using SPWVD function (only on first window)
+# time = downsampled_time_cycles[0]
+# time.reshape(-1, 1)
+
+# signal = downsampled_signals[0]
+# signal.reshape(-1, 1)
+# print(time.shape, signal.shape)
+
+# fs = 1/(0.5*downsample_factor)
+
+# t, f, tfr = spwvd(signal, fs)
+
+# # Plot
+# plt.pcolormesh(time, f, 10 * np.log10(tfr.T), shading='gouraud')
+# plt.ylabel('Frequency [Hz]')
+# plt.xlabel('Time [cycles]')
+# plt.title('Smoothed Pseudo Wigner-Ville Distribution (Custom Implementation)')
+# plt.colorbar(label='Magnitude [dB]')
+# #plt.ylim(0, 300)
+# plt.show()
+
+# # Plot
+# plt.pcolormesh(time, f, tfr.T, shading='gouraud')
+# plt.ylabel('Frequency [Hz]')
+# plt.xlabel('Time [cycles]')
+# plt.title('Smoothed Pseudo Wigner-Ville Distribution (Custom Implementation)')
+# plt.colorbar(label='Magnitude')
+# #plt.ylim(0, 300)
+# plt.show()
+
+CAI_signal = False
 Real_data = True
+Cycle_windowing = True
 
 if CAI_signal:
     data = pd.read_csv('SP\\CAI_test_dataset_spec2_mts.csv')
 
-print('Reading CSV file...')
-#sample_amplitude, sample_risetime, sample_energy, sample_counts, sample_duration, sample_rms = CSV_to_Array('SP\\LowLevelFeaturesSample1.csv')
-df = pd.read_csv('SP\\Sample1Interp.csv')
-
-df = df.iloc[:, 1:]  # Keep all columns except first one (empty)
-print(df)
-
-df = df.iloc[:6000]
-print(df.size)
-df_not_to_normalize = df.drop(columns=['Amplitude'])
-
-# Select the 'Amplitude' column
-df_to_normalize = df['Amplitude']
-
-# Reshape it to a 2D array (n_samples, 1 feature)
-df_to_normalize = df_to_normalize.values.reshape(-1, 1)
-
-# Initialize the StandardScaler
-scaler = StandardScaler()
-
-# Apply fit_transform to normalize the data
-df_normalized = scaler.fit_transform(df_to_normalize)
-
-# If you want to convert it back to a pandas DataFrame (with the same index and column name)
-df_normalized = pd.DataFrame(df_normalized, columns=['Amplitude'], index=df.index)
-df_normalized['Time'] = df['Time']
-#df_normalized = df_normalized[::10]
-print(df_normalized)
-
-print('Data collected')
-
-'''
-Not own work, put own code into chatgpt and got my code improved:
-"Let's refactor your Wigner-Ville Distribution (WVD) and Smoothed Pseudo Wigner-Ville 
-Distribution (SPWVD) implementations properly using an FFT-based approach. 
-This will make the computation much more efficient, accurate, and numerically stable.
-
-Key improvements:
-    - Use FFT instead of direct summation for computing WVD efficiently.
-    - Use a proper lag structure: Instead of iterating over tau manually, we'll handle it using signal padding and FFT shifting.
-    - Fix the SPWVD smoothing by applying Gaussian windows correctly in time and frequency domains.
-    - Optimize Memory Usage by avoiding unnecessary loops.
-    
-What's improved:
-    - FFT-based WVD Computation: Instead of nested loops, we use the Hilbert transform and FFT to compute the WVD much faster.
-    - Proper Time-Frequency Representation: The lag structure is handled automatically instead of using manual index shifting.
-    - Efficient Gaussian Smoothing: We apply separate Gaussian filters along the time and frequency axes for correct smoothing.
-    - Prevents Out-of-Bounds Errors: We zero-pad the signal and ensure no indexing issues occur.
-    
-Performance gain:
-    - Using FFT-based computation makes this implementation orders of magnitude faster than your original nested loops method.
-    - For large signals, this is crucial for real-time applications."
-'''
-
-''' 
-HOW IT WOKRS 
-
-1. Turns real valued AE signal into analytic signal (complex valued and non-negative frequencies) (Hilbert Transform removes 
-    negative frquencies and gives instantaneous amplitude and phase for time-freq analysis)
-2. Create WVD matrix size of signal (2D, rows = time, col = freq) to store time-freq val for each instant
-3. Loop over each time and calc auto-correlation in lag, uses WV formula W(t,τ)=x(t+τ)⋅x*(t-τ)
-    for each time t compute how signal correllates with itself at delays +-tau (captures how energy spreads in time and freq)
-    Values stored in lag domain (τ-axis) for each time (%N maps -ve lags into matrix index range safely)
-4. Apply FFT across lag axis (convert lag-> freq) (W in time vs lag rn not frequency, apply FFT across columns (lags) to transform into time vs freq)
-    fftshift centers the freq axis
-5. Smoothing time domain (bc WVD can have interference terms or artifacts, reduces noise-like interference)
-    Use Gaussian filter, usually used in SPWVD
-6. SMoothing frequency domain (to suppress sharp fluctuations that don't correspond to real features in the AE data)
-'''
-
-def wvd_og(signal):
-    """
-    Wigner-Ville Distribution (WVD) using FFT across lag axis.
-    """
-    N = len(signal)
-    x = hilbert(signal)  # Analytic signal
-    W = np.zeros((N, N), dtype=complex)
-
-    for t in range(N):
-        for tau in range(-min(t, N - t - 1), min(t, N - t - 1) + 1):
-            t_plus = t + tau
-            t_minus = t - tau
-            if 0 <= t_plus < N and 0 <= t_minus < N:
-                W[t, tau % N] = x[t_plus] * np.conj(x[t_minus])
-
-    # Apply FFT along the lag axis (columns) → frequency domain
-    W = np.fft.fftshift(np.fft.fft(W, axis=1), axes=1)
-    return np.real(W)
-
-def spwvd_og(signal, time_smoothing=15, freq_smoothing=15):
-    """
-    Smoothed Pseudo Wigner-Ville Distribution (SPWVD) with Gaussian smoothing.
-    """
-    N = len(signal)
-    W = wvd_og(signal)
-
-    # Time smoothing (along time axis)
-    time_kernel = gaussian(N, std=time_smoothing)
-    time_kernel /= np.sum(time_kernel)
-    W_smoothed_time = convolve1d(W, time_kernel, axis=0, mode='constant')
-
-    # Frequency smoothing (along frequency axis)
-    freq_kernel = gaussian(N, std=freq_smoothing)
-    freq_kernel /= np.sum(freq_kernel)
-    W_smoothed = convolve1d(W_smoothed_time, freq_kernel, axis=1, mode='constant')
-
-    return W_smoothed
-
-def wvd_simple(signal):
-    """
-    WVD using zero-padded lag computation with FFT.
-    Easier to understand but not optimal in speed.
-    """
-    N = len(signal)
-    x = hilbert(signal)
-    W = np.zeros((N, N), dtype=complex)
-
-    for t in range(N):
-        for tau in range(-N//2, N//2):
-            t1 = t + tau
-            t2 = t - tau
-            if 0 <= t1 < N and 0 <= t2 < N:
-                W[t, tau % N] = x[t1] * np.conj(x[t2])
-    
-    W = np.fft.fftshift(np.fft.fft(W, axis=1), axes=1)
-    return np.real(W)
-
-def spwvd_simple(signal, time_smoothing=15, freq_smoothing=15):
-    W = wvd_simple(signal)
-
-    time_kernel = gaussian(W.shape[0], std=time_smoothing)
-    time_kernel /= np.sum(time_kernel)
-    W_time_smoothed = convolve1d(W, time_kernel, axis=0, mode='constant')
-
-    freq_kernel = gaussian(W.shape[1], std=freq_smoothing)
-    freq_kernel /= np.sum(freq_kernel)
-    W_freq_smoothed = convolve1d(W_time_smoothed, freq_kernel, axis=1, mode='constant')
-
-    return W_freq_smoothed
-
-
-if random_signal:
-    # Test signal
-    fs = 1000
-    t = np.linspace(0, 1, fs)
-    x = chirp(t, f0=100, f1=400, t1=1, method='quadratic') + chirp(t, f0=350, f1=50, t1=1, method='quadratic')
-    #print('signal', x)
-    N = len(x)
-    freqs = np.linspace(0, fs, N)
-
-    # SPWVD Matrices
-    spwvd_matrix_v1 = spwvd_og(x, time_smoothing=20, freq_smoothing=20)
-    magnitude = np.abs(spwvd_matrix_v1)
-    spwvd_matrix_v2 = spwvd_simple(x, time_smoothing=20, freq_smoothing=20)
-    wvd_matrix = wvd_og(x)
-    # Plot
-    print('Plotting results...')
-
-    plt.figure(figsize=(12, 6))
-    plt.imshow(np.abs(spwvd_matrix_v1), origin='lower', aspect='auto', cmap='jet')
-    plt.title('SPWVD – Sample 1 Energy (FFT-based)')
-    plt.xlabel('Time [s]')
-    plt.ylabel('Frequency [Hz]')
-    plt.colorbar()
-
-    plt.tight_layout()
-    plt.show()
-
-    # Compute SPWVD
-    freq_bins = 4096
-    twindow = np.array([0.001])
-    fwindow = np.array([0.001])
-    #tfr, t_vals, f_vals, _ = smoothed_pseudo_wigner_ville(df["Amplitude"], timestamps=df["Time"], freq_bins=freq_bins, twindow=twindow, fwindow=fwindow)
-    print('Starting SPWVD on test...')
-    tfr = smoothed_pseudo_wigner_ville(x, timestamps=t, freq_bins=freq_bins, twindow=twindow, fwindow=fwindow)
-    print('Second SPWVD completed')
-    print(tfr.shape)
-    print(type(tfr))
-    print(tfr)
-
-    plt.figure(figsize=(10, 6))
-    plt.imshow(np.abs(tfr), aspect='auto', origin='lower', cmap='jet', extent=[0, tfr.shape[1], 0, tfr.shape[0]])
-    plt.colorbar(label='Magnitude')
-    plt.xlabel('Time (samples)')
-    plt.ylabel('Frequency bins')
-    plt.title('Time-Frequency Representation (TFR)')
-    plt.show()
-
 
 if Real_data:
-    # Load AE data (replace with your actual file path)
-    df = pd.read_csv("SP\\Sample1Interp.csv")
-
-    # Step 1: Group by cycle (Time column) and compute per-cycle features
-    grouped = df.groupby('Time')
-
-    # Define aggregations for useful features
-    agg_df = grouped.agg({
-        'Amplitude': ['mean', 'std', 'max', 'min'],
-        'Energy': ['sum', 'mean'],
-        'Counts': ['sum'],
-        'Duration': ['mean'],
-        'RMS': ['mean'],
-        'Rise-Time': ['mean'],
-    })
-
-    # Step 2: Flatten the MultiIndex column names
-    agg_df.columns = ['_'.join(col) for col in agg_df.columns]
-    agg_df = agg_df.reset_index()
-
-    # Step 3: Add AE event count per cycle
-    agg_df['Num_Events'] = grouped.size().values
-
-    # Step 4: Handle NaNs (e.g., std when only one AE event per cycle)
-    agg_df.fillna(0, inplace=True)  # Or use a different strategy like interpolation
-
-    # Step 5: Apply rolling smoothing (e.g., 5-cycle window)
-    window_size = 5
-    smoothed_df = agg_df.copy()
-    rolling_cols = [col for col in agg_df.columns if col not in ['Time']]  # exclude 'Time'
-
-    for col in rolling_cols:
-        smoothed_df[f'{col}_smoothed'] = agg_df[col].rolling(window=window_size, min_periods=1).mean()
-
-    # Step 6: Preview
-    print(smoothed_df.head())
-
-    # Optional: Save to CSV
-    smoothed_df.to_csv("Sample1_cycle_level_features_smoothed.csv", index=False)
-    
+    # Load data
+    smoothed_df = pd.read_csv("Sample1_cycle_level_features_smoothed.csv")
 
     # Applying SPWVD:
+    col_names = ['Time','Amplitude_mean','Amplitude_std','Amplitude_max','Amplitude_min','Energy_sum','Energy_mean','Counts_sum','Duration_mean','RMS_mean','Rise-Time_mean','Num_Events','Amplitude_mean_smoothed','Amplitude_std_smoothed','Amplitude_max_smoothed','Amplitude_min_smoothed','Energy_sum_smoothed','Energy_mean_smoothed','Counts_sum_smoothed','Duration_mean_smoothed','RMS_mean_smoothed','Rise-Time_mean_smoothed','Num_Events_smoothed']
 
+    relevant_col_names = ['Time','Amplitude_mean','Amplitude_std','Amplitude_max','Amplitude_min','Energy_sum','Energy_mean','Counts_sum','Duration_mean','RMS_mean','Rise-Time_mean','Amplitude_mean_smoothed','Amplitude_std_smoothed','Amplitude_max_smoothed','Amplitude_min_smoothed','Energy_sum_smoothed','Energy_mean_smoothed','Counts_sum_smoothed','Duration_mean_smoothed','RMS_mean_smoothed','Rise-Time_mean_smoothed']
     # Example: using smoothed energy values as the signal
-    signal = smoothed_df['Energy_sum_smoothed'].values
+    signal = smoothed_df['Counts_sum_smoothed'].values
     signal = np.nan_to_num(signal)  # Replace NaNs or infs
+    time_cycles = smoothed_df['Time'].values
+    N_cycles_total = time_cycles.shape[0]
+    print('total n of cycles:', N_cycles_total)
+
+    # Downsampling and dividing signal into segments
     downsample_factor = 10
-    trunkation_loc = 4000
-    downsampled_signal = signal[:trunkation_loc]
-    print('downsampled signal:', downsampled_signal)
+    if Cycle_windowing:
+        truncation_loc = 40000
+        if truncation_loc%downsample_factor!=0:
+            print('Error: number of samples per window is not an integer -> (change downsampling factor to factor of number of samples per window)')
+        overlap_window = 200
+        N_cycle_windows = math.ceil(N_cycles_total/(truncation_loc-overlap_window))
+
+        print('N_cycle_windows:', N_cycle_windows)
+
+        # Creates array of start and stop indices of each window of data
+        Cycle_windows = np.zeros((N_cycle_windows, 2))
+        Cycle_windows[0, 1] = truncation_loc
+
+        # Creates array of segments of data and time
+        downsampled_signals = np.zeros((N_cycle_windows, int(truncation_loc/downsample_factor))) 
+        downsampled_signals[0,:] = signal[:truncation_loc:downsample_factor]
+        downsampled_time_cycles = np.zeros((N_cycle_windows, int(truncation_loc/downsample_factor))) 
+        downsampled_time_cycles[0,:] = time_cycles[:truncation_loc:downsample_factor]
+        # print('Downsampled signal and time')
+        # print(downsampled_signals)
+        # print(downsampled_time_cycles)
+        for i in range(1,N_cycle_windows):
+            print('i = ', i)
+            if i!=(N_cycle_windows-1):
+                j = i-1
+                start = Cycle_windows[j, 1] - overlap_window
+                start = int(start)
+                stop = start + truncation_loc
+                stop = int(stop)
+                # Cycle_windows[i,0] = start
+                # Cycle_windows[i,1] = stop
+                # # print(signal[start:stop:downsample_factor])
+                # # print('shape',signal[start:stop:downsample_factor].shape)
+                # downsampled_signals[i,:] = signal[start:stop:downsample_factor]
+                # downsampled_time_cycles[i,:] = time_cycles[start:stop:downsample_factor]
+            elif i==(N_cycle_windows-1):
+                stop = N_cycles_total
+                start = int(N_cycles_total - truncation_loc)
+            Cycle_windows[i,0] = start
+            Cycle_windows[i,1] = stop
+            # print(signal[start:stop:downsample_factor])
+            # print('shape',signal[start:stop:downsample_factor].shape)
+            downsampled_signals[i,:] = signal[start:stop:downsample_factor]
+            downsampled_time_cycles[i,:] = time_cycles[start:stop:downsample_factor]
+        print('downsampled signals:', downsampled_signals)
+        # print('downsampled time cycles:', downsampled_time_cycles)
+        
+    else:
+        downsampled_signal = signal[::downsample_factor]
+        downsampled_time_cycles = time_cycles[::downsample_factor]
+        print('downsampled signal:', downsampled_signal)
+        
 
     # Apply SPWVD to the downsampled signal    
 
@@ -291,7 +303,7 @@ if Real_data:
         window_time = window_time / np.sum(window_time)
         window_freq = window_freq / np.sum(window_freq)
         
-        # Initialize output
+        # Initialize tfr output array
         tfr = np.zeros((N, N), dtype=complex)
         
         # Compute analytic signal
@@ -300,17 +312,24 @@ if Real_data:
         x_analytic = np.fft.ifft(x_analytic)
         
         # Compute Wigner-Ville with smoothing
+
+        # Time smoothing
+        ''' 
+        n = current point in time
+        tau = range of time lags
+
+        '''
         for n in range(N):
-            tau_max = min(n, N-1-n, Ntime//2)
-            tau = np.arange(-tau_max, tau_max+1)
+            tau_max = min(n, N-1-n, Ntime//2) # Maximum possible lag without out-of-bounds
+            tau = np.arange(-tau_max, tau_max+1) # Symmetric lags around n
             indices = n + tau
-            product = x_analytic[n + tau] * np.conj(x_analytic[n - tau])
-            tfr[n, :] = np.fft.fft(product * window_time[tau_max + tau], N)
+            product = x_analytic[n + tau] * np.conj(x_analytic[n - tau]) # Autocorrelation
+            tfr[n, :] = np.fft.fft(product * window_time[tau_max + tau], N) # Windowed & Fourier-transformed
         
         # Frequency smoothing
         for m in range(N):
-            nu_max = min(m, N-1-m, Nfreq//2)
-            nu = np.arange(-nu_max, nu_max+1)
+            nu_max = min(m, N-1-m, Nfreq//2) # Limits to avoid boundary issues
+            nu = np.arange(-nu_max, nu_max+1) # Frequency shifts
             tfr[:, m] = np.convolve(tfr[:, m], window_freq[nu_max + nu], mode='same')
         
         # Time-frequency representation
@@ -320,17 +339,15 @@ if Real_data:
         
         return t, f, np.abs(tfr)
 
-    # Example usage
-    fs = downsampled_signal.shape[0]
-    print('fs:', fs)
-    time = np.arange(1, fs+1)
+    # Using SPWVD function (only on first window)
+    time = downsampled_time_cycles[0]
     time.reshape(-1, 1)
     
-    signal = downsampled_signal
+    signal = downsampled_signals[0]
     signal.reshape(-1, 1)
     print(time.shape, signal.shape)
 
-    fs = 2
+    fs = 1/(0.5*downsample_factor)
 
     t, f, tfr = spwvd(signal, fs)
 
@@ -339,78 +356,16 @@ if Real_data:
     plt.ylabel('Frequency [Hz]')
     plt.xlabel('Time [cycles]')
     plt.title('Smoothed Pseudo Wigner-Ville Distribution (Custom Implementation)')
-    plt.colorbar(label='Power [dB]')
+    plt.colorbar(label='Magnitude [dB]')
     #plt.ylim(0, 300)
     plt.show()
 
-    result = smoothed_pseudo_wigner_ville(downsampled_signal)
-
-    # Inspect the result
-    print(type(result))  # Check the type of the result to understand the structure
-
-    # It's likely a tuple with the first element as the time-frequency representation (TFR)
-    tfr = result[0]  # Time-frequency representation
-    # Inspect the shape of tfr
-    print(f"Shape of tfr: {tfr.shape}")
-    # If tfr is 1D, reshape it to 2D for plotting
-    if tfr.ndim == 1:
-        tfr = np.expand_dims(tfr, axis=0)
-
-    t = result[1]    # Time axis
-    f = result[2]    # Frequency axis
-
-    #tfr, t, f = smoothed_pseudo_wigner_ville(downsampled_signal)
-
-    # Plot the result
-    plt.figure(figsize=(10, 6))
-    plt.pcolormesh(t, f, np.abs(tfr), shading='auto')
-    plt.xlabel("Cycle")
-    plt.ylabel("Pseudo-frequency (cycles⁻¹)")
-    plt.title("Smoothed Pseudo Wigner-Ville Distribution (SPWVD)")
+    # Plot
+    plt.pcolormesh(time, f, tfr.T, shading='gouraud')
+    plt.ylabel('Frequency [Hz]')
+    plt.xlabel('Time [cycles]')
+    plt.title('Smoothed Pseudo Wigner-Ville Distribution (Custom Implementation)')
     plt.colorbar(label='Magnitude')
-    plt.tight_layout()
+    #plt.ylim(0, 300)
     plt.show()
 
-
-
-
-
-
-# Try real data
-print('Starting SPWVD...')
-# fs_Sample1 = len(sample_energy)/2931*2
-# spwvd_Sample1 = spwvd(df["Amplitude"], time_smoothing=20, freq_smoothing=15)
-# magnitude_Sample1 = np.abs(spwvd_Sample1)
-
-# Compute SPWVD
-freq_bins = 128  # 16384  # np.linspace(0, 100, 256)
-twindow = np.array([0.1])
-fwindow = np.array([0.1])
-#tfr, t_vals, f_vals, _ = smoothed_pseudo_wigner_ville(df["Amplitude"], timestamps=df["Time"], freq_bins=freq_bins, twindow=twindow, fwindow=fwindow)
-print('SPWVD completed')
-print('Starting second SPWVD...')
-tfr = smoothed_pseudo_wigner_ville(df["Energy"], timestamps=df["Time"], freq_bins=freq_bins, twindow=twindow, fwindow=fwindow)
-print('Second SPWVD completed')
-print(tfr.shape)
-print(type(tfr))
-print(tfr)
-
-# # Apply inverse transformation to the reshaped data
-tfr_original_scale = scaler.inverse_transform(tfr)
-
-
-
-plt.figure(figsize=(10, 6))
-plt.imshow(np.abs(tfr_original_scale), aspect='auto', origin='lower', cmap='jet', extent=[0, tfr.shape[1], 0, tfr.shape[0]])
-plt.colorbar(label='Magnitude')
-plt.xlabel('Time (samples)')
-plt.ylabel('Frequency bins')
-plt.title('Time-Frequency Representation (TFR)')
-plt.show()
-# Plot
-# plt.pcolormesh(t_vals, f_vals, np.abs(tfr), shading='auto')
-# plt.xlabel("Time (s)")
-# plt.ylabel("Frequency (Cycles/sample)")
-# plt.title("Smoothed Pseudo Wigner-Ville Distribution (SPWVD)")
-# plt.colorbar(label="Amplitude")
-# plt.show()
