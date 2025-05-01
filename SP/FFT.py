@@ -30,7 +30,7 @@ def perform_fft(file_path):
         data_fft = fft(data)
 
         # Normalize
-        data_fft = data_fft / N
+        # data_fft = data_fft / N
 
         # Frequency bins
         freqs = fftfreq(N, d=sampling_period)
@@ -43,13 +43,13 @@ def perform_fft(file_path):
         results[column] = (freqs_pos, np.abs(data_fft_pos))
 
 
-    if 'Energy' in results:  #Time,Amplitude,Rise-Time,Energy,Counts,Duration,RMS
+    if 'RMS' in results:  #Time,Amplitude,Rise-Time,Energy,Counts,Duration,RMS
         freqs_plot, interest_plot = results['RMS']
         plt.figure(figsize=(10, 6))
         plt.plot(freqs_plot, interest_plot)
-        plt.title('Normalized FFT of Rise-Time')
+        plt.title('Normalized FFT')
         plt.xlabel('Frequency (Hz)')
-        plt.ylabel('Rise-Time')
+        plt.ylabel('RMS')
         plt.grid(True)
         plt.show()
 
