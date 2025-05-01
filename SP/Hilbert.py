@@ -60,19 +60,3 @@ if test_signal:
     plt.legend()
     plt.show()
 
-
-# X = np.array([[5., 2., 8., 13., 0.],
-#     [1., 0., 4., 7., 2.],
-#     [3., 0., 1., 2., 1.],
-#     [0., 4., 3., 2., 1.],
-#     [1., 2., 0., 0., 6.]])
-
-# print(X)
-
-# # PCA
-# Xavg = np.mean(X, axis=1)
-# print(Xavg)
-# #B = X - np.tile(Xavg)
-
-# # Economy SVD
-# U, S, VT = np.linalg.svd(X, full_matrices=False)
