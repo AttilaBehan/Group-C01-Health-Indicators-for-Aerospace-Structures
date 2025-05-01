@@ -1,62 +1,79 @@
 import numpy as np
-#import tftb
-from scipy.signal import hilbert, chirp
-from scipy.signal.windows import gaussian
+from scipy.signal import hilbert
 import pandas as pd
 import matplotlib.pyplot as plt
 from math import pi
-#from CWT import time_array, amplitude_array, rise_time_array, Energy_array, Counts_array, Duration_array, RMS_array
 
-test_signal = False
-real_data = True
-
-''' SORRY THIS SCRIPT IS RLLY MESSY, JUST TRYING STUFF OUT, DON'T USE THIS FOR ANYTHING'''
-
-# Load the CSV file
-# Replace 'your_file.csv' with your actual file path
-df = pd.read_csv(r"SP\LowLevelFeaturesSample1.csv")
+# Load data
+data = pd.read_csv(r"SP\LowLevelFeaturesSample1.csv")
 
 # Show available column names
-print("Column names:", df.columns.tolist())
+print("Column names:", data.columns.tolist())
 
-# Split each column into separate numpy arrays
-column_arrays = {}
-for column in df.columns:
-    column_arrays[column] = df[column].to_numpy()
+# Convert each column to a NumPy array
+time_array = data['Time'].to_numpy()
+amplitude_array = data['Amplitude'].to_numpy()
+rise_time_array = data['Rise-Time'].to_numpy()
+energy_array = data['Energy'].to_numpy()
+counts_array = data['Counts'].to_numpy()
+duration_array = data['Duration'].to_numpy()
+rms_array = data['RMS'].to_numpy()
 
-# Accessing arrays by column name
-time_array = column_arrays['Time'] 
-amplitude_array = column_arrays['Amplitude']  
-rise_time_array = column_arrays['Rise-Time']
-Energy_array = column_arrays['Energy']
-Counts_array = column_arrays['Counts']
-Duration_array = column_arrays['Duration']
-RMS_array = column_arrays['RMS']
+# Function to analyze all signals with Hilbert Transform
+def analyze_signal_with_hilbert(df):
+    signal_columns = df.columns[1:]  # Skip 'Time' column
+    fs = 1/100000
+    #fs = 1 / np.mean(np.diff(df['Time']))  # Sampling frequency
+    results = {}
 
-time_array_truncated = time_array[:1000]
-amplitude_array_truncated = amplitude_array[:1000]
+    for col in signal_columns:
+        x = df[col].to_numpy()
+        analytic_signal = hilbert(x)
+        amplitude_envelope = np.abs(analytic_signal)
+        instantaneous_phase = np.unwrap(np.angle(analytic_signal))
+        instantaneous_frequency = np.diff(instantaneous_phase) / (2.0 * np.pi) * fs
 
-if test_signal:
-    # Example: Create a signal (chirp signal)
-    fs = 1000  # Sampling frequency
-    t = np.linspace(0, 1, fs)  # Time vector
-    x = chirp(t, f0=100, t1=1, f1=400, method='quadratic') + chirp(t, f0=350, t1=1, f1=50, method='quadratic')
+        results[col] = {
+            'amplitude_envelope': amplitude_envelope,
+            'instantaneous_phase': instantaneous_phase,
+            'instantaneous_frequency': instantaneous_frequency
+        }
 
-    analytic_signal = np.imag(hilbert(x))
-    amplitude_envelope = np.abs(analytic_signal)
-    Instantaneous_phase = np.unwrap(np.angle(analytic_signal))
-    Instantaneous_frequency = np.diff(Instantaneous_phase) / (2 * pi) *fs
-    print(Instantaneous_frequency)
+    return results
 
-    plt.subplot(1, 2, 1)
-    plt.plot(t, x, label='Original Signal')
-    #plt.plot(t, analytic_signal, label='Analytic Signal')
-    plt.plot(t, amplitude_envelope, label='Amplitude Envelope')
-    plt.legend()
-    
-    plt.subplot(1, 2, 2)
-    plt.plot(t[1:], Instantaneous_frequency, label='Instantaneous Frequency')
-    plt.plot(t, Instantaneous_phase, label='Instantaneous Phase')
-    plt.legend()
+# Analyze signal
+hilbert_results = analyze_signal_with_hilbert(data)
+
+# Plot the results
+for col, result in hilbert_results.items():
+    fig, axs = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
+    fig.suptitle(f"Hilbert Transform Analysis: {col}")
+
+    axs[0].plot(time_array, data[col], label="Original Signal")
+    axs[0].plot(time_array, result['amplitude_envelope'], label="Envelope", linestyle='--')
+    axs[0].set_ylabel("Amplitude")
+    axs[0].legend()
+
+    axs[1].plot(time_array, result['instantaneous_phase'])
+    axs[1].set_ylabel("Phase (rad)")
+    axs[1].set_title("Instantaneous Phase")
+
+    axs[2].plot(time_array[1:], result['instantaneous_frequency'])  # diff reduces length by 1
+    axs[2].set_ylabel("Frequency (Hz)")
+    axs[2].set_xlabel("Time")
+    axs[2].set_title("Instantaneous Frequency")
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
+
+# Save all instantaneous frequencies to a single text file
+time_trimmed = time_array[1:]  # Adjust for np.diff length
+output_df = pd.DataFrame({'Time': time_trimmed})
+
+for col, result in hilbert_results.items():
+    output_df[col + ' InstFreq'] = result['instantaneous_frequency']
+
+output_path = "SP\OutputHilbert.csv"
+output_df.to_csv(output_path, sep='\t', index=False)
+print(f"All instantaneous frequencies saved to {output_path}")
