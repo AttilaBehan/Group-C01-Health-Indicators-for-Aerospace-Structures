@@ -3,44 +3,55 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import stft
 
-def perform_stft(file_path, window='hann', nperseg=500, noverlap=250):
+def perform_stft(file_path, output_path, window='hann', nperseg=500, noverlap=250):
     """
     Perform STFT on all columns except 'Time' from a CSV file.
-    Returns a dictionary with column names as keys and tuples of (frequencies, times, stft values).
-    Also plots the STFT of the 'Amplitude' column.
-    
-    Parameters:
-    - file_path: Path to the CSV file.
-    - window: Type of window to use for STFT.
-    - nperseg: Length of each segment for STFT.
-    - noverlap: Number of overlapping samples.
-
-Large nperseg: Better frequency resolution, poorer time resolution.
-
-Small nperseg: Better time resolution, poorer frequency resolution.
-
-Large noverlap: Smoother transitions, but more computation (increased overlap between segments).
-
-Small noverlap: Fewer computations, but potential "gaps" in time resolution between segments.
+    Returns a dictionary with column names as keys and tuples of (frequencies, times, STFT values).
+    Also saves the STFT results in a CSV with frequency and time bins, along with STFT magnitudes.
     """
     # Load the CSV file
     df = pd.read_csv(file_path)
 
     # Drop 'Time' column if present
-    if 'Time' in df.columns:
-        df = df.drop(columns=['Time'])
+    time_array = df['Time'].to_numpy()
+    df = df.drop(columns=['Time'])
 
     results = {}
+    stft_results = {}
 
+    # Iterate over each signal column to compute STFT
     for column in df.columns:
         data = df[column].values
 
         # Perform STFT
         f, t, Zxx = stft(data, fs=1 / 0.5, window=window, nperseg=nperseg, noverlap=noverlap)
 
+        # Save the results in the results dictionary
         results[column] = (f, t, np.abs(Zxx))
 
-    if 'Amplitude' in results:  # Example: Plot the STFT of 'RMS' if it exists in the results.
+        # Flatten the STFT magnitudes and save for CSV output
+        stft_results[column] = np.ravel(np.abs(Zxx))
+
+    # Flatten the frequency bins (f) and times (t) as columns
+    frequency_bins = np.tile(f, len(t))  # Repeat frequency bins for each time step
+    time_bins = np.repeat(t, len(f))  # Repeat time bins for each frequency
+
+    # Create the output DataFrame
+    stft_df = pd.DataFrame(stft_results)
+
+    # Add the frequency and time bins to the DataFrame
+    stft_df['Frequency (Hz)'] = frequency_bins
+    stft_df['Time (s)'] = time_bins
+
+    # Reorder the columns for better readability
+    columns_order = ['Frequency (Hz)', 'Time (s)'] + [col for col in df.columns]
+    stft_df = stft_df[columns_order]
+
+    # Save the results to a CSV file
+    stft_df.to_csv(output_path, index=False)
+
+    # Plot the STFT of the 'Amplitude' column if it exists
+    if 'Amplitude' in results:
         f, t, Zxx = results['Amplitude']
         plt.figure(figsize=(10, 6))
         plt.pcolormesh(t, f, 20 * np.log10(np.abs(Zxx)), shading='gouraud')
@@ -53,8 +64,12 @@ Small noverlap: Fewer computations, but potential "gaps" in time resolution betw
 
     return results
 
+# Example usage:
+input_file = r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample1.csv'
+output_file = r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample1STFT.csv'
+perform_stft(input_file, output_file)
 
-results = perform_stft(r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample1.csv')
+
 
 
 
