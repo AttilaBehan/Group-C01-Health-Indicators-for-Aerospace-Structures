@@ -31,6 +31,10 @@ def perform_fft(file_path, output_csv_path):
 
         # Normalize
         data_fft = data_fft / N
+        if N % 2 == 0:
+            data_fft[1:N//2] *= 2  # For even length, adjust the positive frequencies
+        else:
+            data_fft[1:(N+1)//2] *= 2  # For odd length, adjust the positive frequencies
 
         # Frequency bins
         freqs = fftfreq(N, d=sampling_period)
@@ -44,7 +48,7 @@ def perform_fft(file_path, output_csv_path):
         amplitude = np.abs(data_fft_pos)
         rms = np.sqrt(np.mean(np.square(amplitude)))  # RMS calculation
         energy = np.sum(np.square(amplitude))  # Energy is the sum of squared amplitudes
-        rise_time = np.max(amplitude)  # Placeholder for rise-time (assuming max amplitude for now)
+        rise_time = np.max(amplitude)  # Placeholder for rise-time (to be defined appropriately)
         counts = len(amplitude)  # Number of data points
         duration = N * sampling_period  # Duration in seconds
 
