@@ -20,7 +20,7 @@ from scipy.signal import get_window
 ''' To Do: add downsampling factors to class '''
 
 # Downsampling parameters defined
-downsample_factor=10 
+downsample_factor=20 
 truncation_loc=40000 
 overlap_window=200
 
@@ -42,6 +42,8 @@ plot_visual = False
 windowing_output_folder = r"C:\Users\naomi\OneDrive\Documents\Low_Features\Low_features_windowed_fully_preprocessed"
 # Get a list of CSV file paths in the folder
 Windowed_filenames = glob.glob(windowing_output_folder + "/*.csv")
+# Folder to store results in:
+spwvd_results_folder = r"C:\Users\naomi\OneDrive\Documents\Low_Features\SPWVD_results"
 #print(Windowed_filenames)
 #Windowed_filenames = Windowed_filenames[:1]
 # For testing code:
@@ -119,7 +121,7 @@ def spwvd(x, fs, window_time=None, window_freq=None, Ntime=None, Nfreq=None):
 def group_spwvd(group):
     return spwvd(group.values, fs)
 
-def apply_SPWVD_to_windowed_data(filename, truncation_loc, downsample_factor, overlap_window, relevant_col_names):
+def apply_SPWVD_to_windowed_data(filename, output_folder, truncation_loc, downsample_factor, overlap_window, relevant_col_names):
     # Load dataframe 
     df = pd.read_csv(filename)
     N_windows = int(np.max(df['Data_Window_idx'].values) + 1)
@@ -134,14 +136,15 @@ def apply_SPWVD_to_windowed_data(filename, truncation_loc, downsample_factor, ov
 
     last_window_times = df.loc[df['Data_Window_idx'] == last_window_idx, 'Time_cycle'].reset_index(drop=True)
     second_last_window_times = df.loc[df['Data_Window_idx'] == second_last_window_idx, 'Time_cycle'].values
+    sec_last_window_last_time = max(second_last_window_times)
 
     for i, val in enumerate(last_window_times):
-        if val not in second_last_window_times:
+        if val>sec_last_window_last_time:
             N_cut_fin_wind = i
             break
 
     # Find dimensions of window outputs
-    time_dim = int(truncation_loc/downsample_factor*N_windows)
+    time_dim = time_array_reconstructed.shape[0] # = int(truncation_loc/downsample_factor*N_windows)
     freq_dim = int(truncation_loc/downsample_factor/2)
     window_time_dim  = int(truncation_loc/downsample_factor)
     
@@ -149,13 +152,15 @@ def apply_SPWVD_to_windowed_data(filename, truncation_loc, downsample_factor, ov
 
     base_filename = os.path.basename(filename)
     # Extract the 'Sample1' part for any number
-    sample_number = base_filename.split("_")[0]
-    base_output_folder = r"C:\Users\naomi\OneDrive\Documents\Low_Features\SPWVD_results"
+    sample_number = base_filename.split("Interp")[0]
+    base_output_folder = output_folder
     extract_to_folder = os.path.join(base_output_folder, f"{sample_number}_spwvd")
     # Create the folder if it doesn't exist
     os.makedirs(extract_to_folder, exist_ok=True)
 
-    print(f"Created (or verified existing) folder: {extract_to_folder}")
+    print(f"\n Created (or verified existing) folder: {extract_to_folder}")
+
+    print(f'\n Computing SPWVD for {sample_number}...')
 
     # Create file names each feature column tfr array to csv file to be stored
     tfr_feature_filenames = [
@@ -165,7 +170,7 @@ def apply_SPWVD_to_windowed_data(filename, truncation_loc, downsample_factor, ov
 
     # Compute SPWVD of each feature
     for i, col in enumerate(relevant_col_names):
-        print(f'Computing SPWVD for {col}')
+        print(f'\n Processing feature {col}')
         # Group by window and compute SPWVD per window (spwvd_results is a Pandas Series with each row being a tuple (t, f, tfr))
         spwvd_results = df.groupby('Data_Window_idx')[col].apply(group_spwvd)
 
@@ -184,6 +189,9 @@ def apply_SPWVD_to_windowed_data(filename, truncation_loc, downsample_factor, ov
             time = window_time_array
             tfr = window_tfr
             f = window_f
+
+            #print('j=',j)
+            #print(f'Time: {time}, \n Frequencies: {f}, \n TFR: {tfr}')
             if j==0:
                 frequency = f
                 start_time = 0
@@ -196,14 +204,18 @@ def apply_SPWVD_to_windowed_data(filename, truncation_loc, downsample_factor, ov
                 tfr = tfr[cut_off_rows:,:]
                 start_time = end_time
                 end_time = start_time + int(truncation_loc/downsample_factor-cut_off_rows)
+                time = time[cut_off_rows:]
             if j==(N_windows-1):
                 tfr = tfr[N_cut_fin_wind:,:]
-                start_time = end_time
-                end_time = start_time + int(truncation_loc/downsample_factor-N_cut_fin_wind)
+                end_time = int(time_dim)
+                start_time = end_time - tfr.shape[0]
+                time = time[N_cut_fin_wind:]
 
             # Add non-overlapping parts of tfr to main array
-            #print('j=',j)
+            #print(f'Truncated: \n Time: {time}, \n Frequencies: {f}, \n TFR: {tfr}')
+
             tfr_concat[start_time:end_time,:] = tfr
+            time_array_reconstructed[start_time:end_time] = time
 
             # print('Shape of tfr:', tfr.shape)
             # print('Shape of time:', time.shape)
@@ -211,7 +223,7 @@ def apply_SPWVD_to_windowed_data(filename, truncation_loc, downsample_factor, ov
             # print('tfr', tfr)
 
             if plot_visual and j==0:
-                print('Plotting first graph...')
+                print(f'\n Plotting logarithmic scale graph...')
                 # Plot logarithmic scale
                 plt.pcolormesh(time, f, 10 * np.log10(tfr.T), shading='gouraud')
                 plt.ylabel('Frequency [Hz]')
@@ -221,6 +233,7 @@ def apply_SPWVD_to_windowed_data(filename, truncation_loc, downsample_factor, ov
                 #plt.ylim(0, 300)
                 plt.show()
 
+                print(f'\n Plotting real scale graph...')
                 # Plot normal scale
                 plt.pcolormesh(time, f, tfr.T, shading='auto')
                 plt.ylabel('Frequency [Hz]')
@@ -239,7 +252,7 @@ def apply_SPWVD_to_windowed_data(filename, truncation_loc, downsample_factor, ov
         output_filename = tfr_feature_filenames[i]
         full_output_path = os.path.join(extract_to_folder, output_filename)
         final_df.to_csv(full_output_path, index=False)
-        print(f"Time frequency array of feature: {col}, saved as {output_filename} in {full_output_path}")
+        print(f"\n Time frequency array of feature: {col}, saved as {output_filename} in {full_output_path}")
             
         
                 
@@ -249,212 +262,7 @@ def apply_SPWVD_to_windowed_data(filename, truncation_loc, downsample_factor, ov
 #apply_SPWVD_to_windowed_data('Sample1_window_level_features_smoothed.csv')
 
 for i, file in enumerate(Windowed_filenames):
-    print(f'Processing data file {i+1} out of {len(Windowed_filenames)}')
-    apply_SPWVD_to_windowed_data(file, truncation_loc, downsample_factor, overlap_window, relevant_col_names)
+    print(f'\n Processing data file {i+1} out of {len(Windowed_filenames)}')
+    apply_SPWVD_to_windowed_data(file, spwvd_results_folder, truncation_loc, downsample_factor, overlap_window, relevant_col_names)
 
-print(f'All data processed and saved to {r"C:\Users\naomi\OneDrive\Documents\Low_Features\SPWVD_results"}')
-
-# # Using SPWVD function (only on first window)
-# time = downsampled_time_cycles[0]
-# time.reshape(-1, 1)
-
-# signal = downsampled_signals[0]
-# signal.reshape(-1, 1)
-# print(time.shape, signal.shape)
-
-# fs = 1/(0.5*downsample_factor)
-
-# t, f, tfr = spwvd(signal, fs)
-
-# # Plot
-# plt.pcolormesh(time, f, 10 * np.log10(tfr.T), shading='gouraud')
-# plt.ylabel('Frequency [Hz]')
-# plt.xlabel('Time [cycles]')
-# plt.title('Smoothed Pseudo Wigner-Ville Distribution (Custom Implementation)')
-# plt.colorbar(label='Magnitude [dB]')
-# #plt.ylim(0, 300)
-# plt.show()
-
-# # Plot
-# plt.pcolormesh(time, f, tfr.T, shading='gouraud')
-# plt.ylabel('Frequency [Hz]')
-# plt.xlabel('Time [cycles]')
-# plt.title('Smoothed Pseudo Wigner-Ville Distribution (Custom Implementation)')
-# plt.colorbar(label='Magnitude')
-# #plt.ylim(0, 300)
-# plt.show()
-
-CAI_signal = False
-Real_data = False
-Cycle_windowing = True
-
-if CAI_signal:
-    data = pd.read_csv('SP\\CAI_test_dataset_spec2_mts.csv')
-
-
-if Real_data:
-    # Load data
-    smoothed_df = pd.read_csv("Sample1_cycle_level_features_smoothed.csv")
-
-    # Applying SPWVD:
-    col_names = ['Time','Amplitude_mean','Amplitude_std','Amplitude_max','Amplitude_min','Energy_sum','Energy_mean','Counts_sum','Duration_mean','RMS_mean','Rise-Time_mean','Num_Events','Amplitude_mean_smoothed','Amplitude_std_smoothed','Amplitude_max_smoothed','Amplitude_min_smoothed','Energy_sum_smoothed','Energy_mean_smoothed','Counts_sum_smoothed','Duration_mean_smoothed','RMS_mean_smoothed','Rise-Time_mean_smoothed','Num_Events_smoothed']
-
-    relevant_col_names = ['Time','Amplitude_mean','Amplitude_std','Amplitude_max','Amplitude_min','Energy_sum','Energy_mean','Counts_sum','Duration_mean','RMS_mean','Rise-Time_mean','Amplitude_mean_smoothed','Amplitude_std_smoothed','Amplitude_max_smoothed','Amplitude_min_smoothed','Energy_sum_smoothed','Energy_mean_smoothed','Counts_sum_smoothed','Duration_mean_smoothed','RMS_mean_smoothed','Rise-Time_mean_smoothed']
-    # Example: using smoothed energy values as the signal
-    signal = smoothed_df['Counts_sum_smoothed'].values
-    signal = np.nan_to_num(signal)  # Replace NaNs or infs
-    time_cycles = smoothed_df['Time'].values
-    N_cycles_total = time_cycles.shape[0]
-    print('total n of cycles:', N_cycles_total)
-
-    # Downsampling and dividing signal into segments
-    downsample_factor = 10
-    if Cycle_windowing:
-        truncation_loc = 40000
-        if truncation_loc%downsample_factor!=0:
-            print('Error: number of samples per window is not an integer -> (change downsampling factor to factor of number of samples per window)')
-        overlap_window = 200
-        N_cycle_windows = math.ceil(N_cycles_total/(truncation_loc-overlap_window))
-
-        print('N_cycle_windows:', N_cycle_windows)
-
-        # Creates array of start and stop indices of each window of data
-        Cycle_windows = np.zeros((N_cycle_windows, 2))
-        Cycle_windows[0, 1] = truncation_loc
-
-        # Creates array of segments of data and time
-        downsampled_signals = np.zeros((N_cycle_windows, int(truncation_loc/downsample_factor))) 
-        downsampled_signals[0,:] = signal[:truncation_loc:downsample_factor]
-        downsampled_time_cycles = np.zeros((N_cycle_windows, int(truncation_loc/downsample_factor))) 
-        downsampled_time_cycles[0,:] = time_cycles[:truncation_loc:downsample_factor]
-        # print('Downsampled signal and time')
-        # print(downsampled_signals)
-        # print(downsampled_time_cycles)
-        for i in range(1,N_cycle_windows):
-            print('i = ', i)
-            if i!=(N_cycle_windows-1):
-                j = i-1
-                start = Cycle_windows[j, 1] - overlap_window
-                start = int(start)
-                stop = start + truncation_loc
-                stop = int(stop)
-                # Cycle_windows[i,0] = start
-                # Cycle_windows[i,1] = stop
-                # # print(signal[start:stop:downsample_factor])
-                # # print('shape',signal[start:stop:downsample_factor].shape)
-                # downsampled_signals[i,:] = signal[start:stop:downsample_factor]
-                # downsampled_time_cycles[i,:] = time_cycles[start:stop:downsample_factor]
-            elif i==(N_cycle_windows-1):
-                stop = N_cycles_total
-                start = int(N_cycles_total - truncation_loc)
-            Cycle_windows[i,0] = start
-            Cycle_windows[i,1] = stop
-            # print(signal[start:stop:downsample_factor])
-            # print('shape',signal[start:stop:downsample_factor].shape)
-            downsampled_signals[i,:] = signal[start:stop:downsample_factor]
-            downsampled_time_cycles[i,:] = time_cycles[start:stop:downsample_factor]
-        print('downsampled signals:', downsampled_signals)
-        # print('downsampled time cycles:', downsampled_time_cycles)
-        
-    else:
-        downsampled_signal = signal[::downsample_factor]
-        downsampled_time_cycles = time_cycles[::downsample_factor]
-        print('downsampled signal:', downsampled_signal)
-        
-
-    # Apply SPWVD to the downsampled signal    
-
-    def spwvd(x, fs, window_time=None, window_freq=None, Ntime=None, Nfreq=None):
-        """
-        Smoothed Pseudo Wigner-Ville Distribution
-        
-        Parameters:
-        x - input signal
-        fs - sampling frequency
-        window_time - time smoothing window (default: 128-point Hamming)
-        window_freq - frequency smoothing window (default: 128-point Hamming)
-        Ntime - time window length
-        Nfreq - frequency window length
-        """
-        N = len(x)
-        
-        # Default parameters
-        if Ntime is None:
-            Ntime = min(129, N//4)
-        if Nfreq is None:
-            Nfreq = min(129, N//4)
-        if window_time is None:
-            window_time = get_window('hamming', Ntime)
-        if window_freq is None:
-            window_freq = get_window('hamming', Nfreq)
-        
-        # Normalize windows
-        window_time = window_time / np.sum(window_time)
-        window_freq = window_freq / np.sum(window_freq)
-        
-        # Initialize tfr output array
-        tfr = np.zeros((N, N), dtype=complex)
-        
-        # Compute analytic signal
-        x_analytic = np.fft.fft(x)
-        x_analytic[N//2+1:] = 0
-        x_analytic = np.fft.ifft(x_analytic)
-        
-        # Compute Wigner-Ville with smoothing
-
-        # Time smoothing
-        ''' 
-        n = current point in time
-        tau = range of time lags
-
-        '''
-        for n in range(N):
-            tau_max = min(n, N-1-n, Ntime//2) # Maximum possible lag without out-of-bounds
-            tau = np.arange(-tau_max, tau_max+1) # Symmetric lags around n
-            indices = n + tau
-            product = x_analytic[n + tau] * np.conj(x_analytic[n - tau]) # Autocorrelation
-            tfr[n, :] = np.fft.fft(product * window_time[tau_max + tau], N) # Windowed & Fourier-transformed
-        
-        # Frequency smoothing
-        for m in range(N):
-            nu_max = min(m, N-1-m, Nfreq//2) # Limits to avoid boundary issues
-            nu = np.arange(-nu_max, nu_max+1) # Frequency shifts
-            tfr[:, m] = np.convolve(tfr[:, m], window_freq[nu_max + nu], mode='same')
-        
-        # Time-frequency representation
-        t = np.arange(N) / fs
-        f = np.fft.fftfreq(N, 1/fs)[:N//2]
-        tfr = tfr[:, :N//2]
-        
-        return t, f, np.abs(tfr)
-
-    # Using SPWVD function (only on first window)
-    time = downsampled_time_cycles[0]
-    time.reshape(-1, 1)
-    
-    signal = downsampled_signals[0]
-    signal.reshape(-1, 1)
-    print(time.shape, signal.shape)
-
-    fs = 1/(0.5*downsample_factor)
-
-    t, f, tfr = spwvd(signal, fs)
-
-    # Plot
-    plt.pcolormesh(time, f, 10 * np.log10(tfr.T), shading='gouraud')
-    plt.ylabel('Frequency [Hz]')
-    plt.xlabel('Time [cycles]')
-    plt.title('Smoothed Pseudo Wigner-Ville Distribution (Custom Implementation)')
-    plt.colorbar(label='Magnitude [dB]')
-    #plt.ylim(0, 300)
-    plt.show()
-
-    # Plot
-    plt.pcolormesh(time, f, tfr.T, shading='gouraud')
-    plt.ylabel('Frequency [Hz]')
-    plt.xlabel('Time [cycles]')
-    plt.title('Smoothed Pseudo Wigner-Ville Distribution (Custom Implementation)')
-    plt.colorbar(label='Magnitude')
-    #plt.ylim(0, 300)
-    plt.show()
-
+print(f'\n All data processed and saved to {r"C:\Users\naomi\OneDrive\Documents\Low_Features\SPWVD_results"}')

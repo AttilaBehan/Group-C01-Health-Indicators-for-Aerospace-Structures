@@ -68,7 +68,7 @@ smoothed_rel_col_names = ['Time','Amplitude_mean_smoothed','Energy_mean_smoothed
 
 
 # 2. Downsampling parameters defined
-downsample_factor=10 
+downsample_factor=20 
 truncation_loc=40000 
 overlap_window=200
 
