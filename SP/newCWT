@@ -1,0 +1,34 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import pywt
+import os
+
+# Load the data
+df = pd.read_csv(r"SP\LowLevelFeaturesSample1.csv")
+
+wavlist = pywt.wavelist(kind = 'continuous')
+
+
+import cv2
+
+# Generate a 2D Gabor kernel
+kernel = cv2.getGaborKernel(
+    ksize=(31, 31),
+    sigma=5,
+    theta=np.pi/4,  # 45 degrees
+    lambd=10,       # Wavelength
+    gamma=0.5,      # Aspect ratio
+    psi=0,          # Phase offset
+)
+
+# Visualize
+plt.imshow(kernel, cmap='viridis')
+plt.colorbar()
+plt.title("2D Gabor Wavelet (OpenCV)")
+plt.show()
+
+coef,freqs = pywt.cwt(df[1], wavelet=kernel)
+
+
+print("CWT processing complete. CSVs and plots saved.")
