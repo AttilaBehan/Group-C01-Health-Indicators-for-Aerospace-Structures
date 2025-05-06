@@ -12,6 +12,9 @@ def perform_stft(file_path, output_path, window='hann', nperseg=500, noverlap=25
     # Load the CSV file
     df = pd.read_csv(file_path)
 
+    # Drop rows that are completely empty (e.g., ",,,,,,")
+    df.dropna(how='all', inplace=True)
+
     # Drop 'Time' column if present
     time_array = df['Time'].to_numpy()
     df = df.drop(columns=['Time'])
@@ -65,8 +68,8 @@ def perform_stft(file_path, output_path, window='hann', nperseg=500, noverlap=25
     return results
 
 # Example usage:
-input_file = r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample1.csv'
-output_file = r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample1STFT.csv'
+input_file = r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample2.csv'
+output_file = r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample2STFT.csv'
 perform_stft(input_file, output_file)
 
 
