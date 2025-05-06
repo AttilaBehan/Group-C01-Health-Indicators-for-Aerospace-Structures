@@ -9,7 +9,7 @@ df = pd.read_csv(r"SP\LowLevelFeaturesSample1.csv")
 
 wavlist = pywt.wavelist(kind = 'continuous')
 
-
+'''
 import cv2
 
 # Generate a 2D Gabor kernel
@@ -27,8 +27,9 @@ plt.imshow(kernel, cmap='viridis')
 plt.colorbar()
 plt.title("2D Gabor Wavelet (OpenCV)")
 plt.show()
-
-coef,freqs = pywt.cwt(df[1], wavelet=kernel)
-
+'''
+coef,freqs = pywt.cwt(df[1],'gaus1' )
+plt.matshow(coef)
+plt.show()
 
 print("CWT processing complete. CSVs and plots saved.")
