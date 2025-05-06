@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-def compute_plot_save_envelopes(file_path, output_csv_path, plot_dir=None):
+def perform_ht(file_path, output_csv_path, plot_dir=None):
     """
     Compute Hilbert amplitude envelopes for each signal column (excluding 'Time').
     - Plot each envelope over the original signal.
@@ -57,7 +57,7 @@ def compute_plot_save_envelopes(file_path, output_csv_path, plot_dir=None):
     return envelope_df
 
 
-envelope_df = compute_plot_save_envelopes(
+envelope_df = perform_ht(
     file_path=r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample2.csv',
     output_csv_path=r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample2HT.csv',
     plot_dir=None  # Set to None to disable saving plots
