@@ -149,7 +149,7 @@ def VAE_find_largest_array_size(array_list):
 
     return max_size
 
-def simple_store_hyperparameters(hyperparameters, file, panel, freq, dir):
+def simple_store_hyperparameters(hyperparameters, file, panel, dir):
     """
     Store hyperparameters in a CSV file
 
@@ -165,16 +165,9 @@ def simple_store_hyperparameters(hyperparameters, file, panel, freq, dir):
     # Create the filename
     filename_opt = os.path.join(dir, f"hyperparameters-opt-{file}.csv")
 
-    # List frequencies
-    freqs = ["050_kHz", "100_kHz", "125_kHz", "150_kHz", "200_kHz", "250_kHz"]
-
-    # If freq does not end with _kHz, add it for naming purposes
-    if not freq.endswith("_kHz"):
-        freq = freq + "_kHz"
-
     # Create an empty dataframe with frequencies as the index if the file does not exist
     if not os.path.exists(filename_opt):
-        df = pd.DataFrame(index=freqs)
+        df = pd.DataFrame(index=0)
     else:
         # Load the existing file if it exists
         df = pd.read_csv(filename_opt, index_col=0)
@@ -184,7 +177,7 @@ def simple_store_hyperparameters(hyperparameters, file, panel, freq, dir):
         df[panel] = None
 
     # Update the dataframe with the new parameters
-    df.loc[freq, panel] = str(hyperparameters)
+    df.loc[panel] = str(hyperparameters)
 
     # Save the dataframe back to the CSV
     df.to_csv(filename_opt)

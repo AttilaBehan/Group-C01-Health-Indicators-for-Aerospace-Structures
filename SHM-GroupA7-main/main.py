@@ -322,18 +322,15 @@ def hyperDeepSad(dir):
     """
 
     # List frequencies, filenames and samples
-    frequencies = ["050", "100", "125", "150", "200", "250"]
     filenames = ["Sample1", "Sample2", "Sample3", "Sample4", "Sample5", "Sample6", "Sample7", "Sample8", "Sample9", "Sample10", "Sample11", "Sample12"]
-    samples = ["PZT-FFT-HLB-L1-03", "PZT-FFT-HLB-L1-04", "PZT-FFT-HLB-L1-05", "PZT-FFT-HLB-L1-09", "PZT-FFT-HLB-L1-23"]
 
     # Optimise hyperparameters for all files and frequencies
     for file in filenames:
-        for freq in frequencies:
-            params = DeepSAD_train_run(dir, freq, file, True)
+        params = DeepSAD_train_run(dir, file, True)
 
-            # Save to external file
-            for sample in range(5):
-                simple_store_hyperparameters(params[sample], file, samples[sample], freq, dir)
+        # Save to external file
+        for sample in range(5):
+            simple_store_hyperparameters(params[sample], file, filenames[sample], dir)
 
 
 def saveDeepSAD(dir):
