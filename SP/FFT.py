@@ -16,9 +16,13 @@ def perform_fft(file_path, output_csv_path):
     # Load the CSV file
     df = pd.read_csv(file_path)
 
+    # Drop rows that are completely empty (e.g., ",,,,,,")
+    df.dropna(how='all', inplace=True)
+
     # Drop 'Time' column if present
     if 'Time' in df.columns:
         df = df.drop(columns=['Time'])
+
 
     results = []
 
@@ -74,8 +78,8 @@ def perform_fft(file_path, output_csv_path):
     return results_df
 
 # Example usage:
-output_csv_path = r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample1FFT.csv'
-results_df = perform_fft(r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample1.csv', output_csv_path)
+output_csv_path = r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample2FFT.csv'
+results_df = perform_fft(r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample2.csv', output_csv_path)
 
 
 '''

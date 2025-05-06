@@ -4,6 +4,7 @@ import math
 import glob
 import os
 import zipfile
+from Variables import SharedData
 
 preview_smoothed_df = False
 ''' 
@@ -67,10 +68,10 @@ relevant_col_names = ['Time','Amplitude_mean','Energy_mean','Counts_sum','Durati
 smoothed_rel_col_names = ['Time','Amplitude_mean_smoothed','Energy_mean_smoothed','Counts_sum_smoothed','Duration_mean_smoothed','RMS_mean_smoothed','Rise-Time_mean_smoothed']
 
 
-# 2. Downsampling parameters defined
-downsample_factor=20 
-truncation_loc=40000 
-overlap_window=200
+# 2. Downsampling parameters from class
+downsample_factor = SharedData.downsample_factor
+truncation_loc = SharedData.truncation_loc
+overlap_window = SharedData.overlap_window
 
 # 3. Functions for smoothing, downsampling and windowing, and only downsampling defined
 def generate_smoothed_df(input_filename, output_folder, output_filename, smoothing_window_size=5):
