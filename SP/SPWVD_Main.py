@@ -15,14 +15,14 @@ from scipy.ndimage import convolve1d
 from tftb.processing import smoothed_pseudo_wigner_ville
 from sklearn.preprocessing import StandardScaler
 from scipy.signal import get_window
-#from Data_processing_SPWVD import downsample_factor, truncation_loc, overlap_window
+from Variables import SharedData
 
 ''' To Do: add downsampling factors to class '''
 
-# Downsampling parameters defined
-downsample_factor=20 
-truncation_loc=40000 
-overlap_window=200
+# Downsampling parameters from class
+downsample_factor = SharedData.downsample_factor
+truncation_loc = SharedData.truncation_loc
+overlap_window = SharedData.overlap_window
 
 # Make this true if you want to plot one of the color plots to check
 plot_visual = False
