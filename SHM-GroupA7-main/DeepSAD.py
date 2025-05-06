@@ -213,6 +213,7 @@ def init_c(model, train_loader, eps=0.1):
 
     n_samples = 0
     c = torch.zeros((4, 4))     # 16-dimensional coordinates, formatted into 2D array
+    c.to(device)
 
     # Forward pass
     model.eval()
@@ -286,6 +287,7 @@ def train(model, train_loader, learning_rate, weight_decay, n_epochs, lr_milesto
                 # Calculating loss function
                 Y = outputs - model.c
                 dist = torch.sum(Y ** 2)
+                dist.to(device)
                 loss_d = 0
                 if target == 0:
                     losses = dist
@@ -294,6 +296,7 @@ def train(model, train_loader, learning_rate, weight_decay, n_epochs, lr_milesto
 
                 if reg != 0:  # If we want to diversify
                     C = torch.matmul(Y.T, Y)  # Gram Matrix
+                    C.to(device)
                     loss_d = -torch.log(torch.det(C)) + torch.trace(C)  # Diversity loss contribution
 
                 losses += reg * loss_d
@@ -409,6 +412,7 @@ def embed(X, model):
 
     model.eval()
     y = torch.norm(model(X) - model.c)   # Magnitude of the vector is anomaly score
+    y.to(device)
     return y
 
 def load_data(dir, filename, labelled_fraction, ignore):
@@ -427,38 +431,30 @@ def load_data(dir, filename, labelled_fraction, ignore):
     data = None
     labels = None
     first = True  # First sample flag
-    for i, name in enumerate(filename):
-        filename[i] = name +".csv"
+    filename = name +".csv"
     filename = set(filename)
     # Walk directory
     for root, dirs, files in os.walk(dir):
         for name in files:
             if name in filename:  # If correct file to be included in training data
                 read_data = np.array(pd.read_csv(os.path.join(root, name)))
-                # Set data and labels arrays to data from first sample
-                if first:
-                    data = [read_data]
-                    labels = np.array([1.0])
-                    first = False
-                # Concatenate additional samples
-                else:
-                    data.append(read_data)
-                    labels = np.append(labels, 0)  # Default label is 0
-                    labels = labels.reshape(-1,1)
-    if labels is not None and len(labels) > 0:
-        # Add artificial labels
-        teol = data.shape[0]
-        x_values = np.arange(0, teol+1)
-        #health_indicators = ((x_values ** 2) / (teol ** 2)) * 2 - 1  # Equation scaled from -1 to 1
-        health_indicators = 1-2*x_values/teol
-        for i in range(int(len(labels) * labelled_fraction)):  # Originally 5
-            labels[i] = health_indicators[0]  # Healthy
+                data = [read_data]
+                labels = np.array([1.0])
+                first = False
+    # Add artificial labels
+    teol = data.shape[0]
+    print(teol)
+    x_values = np.arange(0, teol+1)
+    #health_indicators = ((x_values ** 2) / (teol ** 2)) * 2 - 1  # Equation scaled from -1 to 1
+    health_indicators = 1-2*x_values/teol
+    for i in range(int(len(labels) * labelled_fraction)):  # Originally 5
+        labels[i] = health_indicators[0]  # Healthy
 
-        for i in range(int(len(labels) * labelled_fraction)):  # Originally 3
-            labels[-i - 1] = health_indicators[1]  # Unhealthy
-        return torch.tensor(data, dtype=torch.float32), torch.tensor(labels, dtype=torch.float32)
-    else:
-        raise ValueError("No data loaded or empty dataset found.")
+    for i in range(int(len(labels) * labelled_fraction)):  # Originally 3
+        labels[-i - 1] = health_indicators[1]  # Unhealthy
+    return torch.tensor(data, dtype=torch.float32), torch.tensor(labels, dtype=torch.float32)
+    #else:
+        #raise ValueError("No data loaded or empty dataset found.")
 
 
 # Hyperparameter Bayesian optimization
@@ -520,6 +516,7 @@ def objective(batch_size, learning_rate_AE, learning_rate, n_epochs_AE, n_epochs
 
     # Initialise a model
     model = NeuralNet([train_data.shape[1], train_data.shape[2]])
+    model.to(device)
 
     # Convert batch size from float to integer
     batch_size = int(batch_size)
@@ -534,6 +531,8 @@ def objective(batch_size, learning_rate_AE, learning_rate, n_epochs_AE, n_epochs
     list = []
     for test_sample in pass_train_samples:
         test_data, temp_targets = load_data(os.path.join(pass_dir, test_sample), pass_fnwf, labelled_fraction, ignore)
+        test_data.to(device)
+        temp_targets.to(device)
 
         # Calculate HI at each state
         current_result = []
@@ -670,7 +669,9 @@ def DeepSAD_train_run(dir, freq, file_name, opt=False):
 
         # Convert to pytorch tensors
         train_data = torch.tensor(arr_data)
+        train_data.to(device)
         semi_targets = torch.tensor(arr_targets)
+        semi_targets.to(device)
 
         # Create list of data dimensions to set number of input nodes in neural network
         size = [train_data.shape[1], train_data.shape[2]]
@@ -728,7 +729,7 @@ def DeepSAD_train_run(dir, freq, file_name, opt=False):
             #Graphs.HI_graph(list, dir, samples[sample_count] + " " + freq + "kHz")
 
             results[sample_count] = list
-
+    print(tensor.device)
     if opt:
         return hps
     else:
