@@ -1,35 +1,38 @@
-import pandas as pd
+import pywt
 import numpy as np
 import matplotlib.pyplot as plt
-import pywt
-import os
+import pandas as pd
 
-# Load the data
+# Load data
 df = pd.read_csv(r"SP\LowLevelFeaturesSample1.csv")
 
-wavlist = pywt.wavelist(kind = 'continuous')
+# Assuming first column is time, second is signal
+t = df.iloc[:, 0].values
+signal = df.iloc[:, 1].values
 
-'''
-import cv2
+# Define scales
+scales = np.arange(1, 31)  # Adjust as needed
 
-# Generate a 2D Gabor kernel
-kernel = cv2.getGaborKernel(
-    ksize=(31, 31),
-    sigma=5,
-    theta=np.pi/4,  # 45 degrees
-    lambd=10,       # Wavelength
-    gamma=0.5,      # Aspect ratio
-    psi=0,          # Phase offset
-)
+# Perform CWT using Gaussian wavelet
+coef, freqs = pywt.cwt(signal, scales, 'morl')
 
-# Visualize
-plt.imshow(kernel, cmap='viridis')
-plt.colorbar()
-plt.title("2D Gabor Wavelet (OpenCV)")
-plt.show()
-'''
-coef,freqs = pywt.cwt(df[1],'gaus1' )
-plt.matshow(coef)
+# Plot the signal
+plt.figure(figsize=(15, 4))
+plt.plot(t, signal)
+plt.title("Input Signal")
+plt.xlabel("Time")
+plt.ylabel("Amplitude")
+plt.grid(True)
+plt.tight_layout()
 plt.show()
 
-print("CWT processing complete. CSVs and plots saved.")
+# Plot the scalogram
+plt.figure(figsize=(15, 6))
+plt.imshow(t, cmap='bone',
+           aspect='auto', vmax=abs(coef).max(), vmin=-abs(coef).max())
+plt.title("Continuous Wavelet Transform (Scalogram)")
+plt.xlabel("Time")
+plt.ylabel("Scale")
+plt.colorbar(label="Magnitude")
+plt.tight_layout()
+plt.show()
