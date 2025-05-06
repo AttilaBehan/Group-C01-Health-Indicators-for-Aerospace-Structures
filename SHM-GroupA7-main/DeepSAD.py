@@ -428,31 +428,27 @@ def load_data(dir, filename, labelled_fraction, ignore):
          - data (2D numpy array): list of training data vectors
          - labels (1D numpy array): artificial labels for training data
     """
-    data = None
     labels = None
     first = True  # First sample flag
-    filename = name +".csv"
-    filename = set(filename)
+    filename = filename +".csv"
     # Walk directory
     for root, dirs, files in os.walk(dir):
         for name in files:
             if name in filename:  # If correct file to be included in training data
                 read_data = np.array(pd.read_csv(os.path.join(root, name)))
-                data = [read_data]
-                labels = np.array([1.0])
-                first = False
-    # Add artificial labels
-    teol = data.shape[0]
-    print(teol)
-    x_values = np.arange(0, teol+1)
-    #health_indicators = ((x_values ** 2) / (teol ** 2)) * 2 - 1  # Equation scaled from -1 to 1
-    health_indicators = 1-2*x_values/teol
-    for i in range(int(len(labels) * labelled_fraction)):  # Originally 5
-        labels[i] = health_indicators[0]  # Healthy
+                teol = read_data.shape[0]
+                labels = np.ones(teol)
+                # Add artificial labels
+    
+                x_values = np.arange(0, teol+1)
+                #health_indicators = ((x_values ** 2) / (teol ** 2)) * 2 - 1  # Equation scaled from -1 to 1
+                health_indicators = 1-2*x_values/teol
+                for i in range(int(len(labels) * labelled_fraction)):  # Originally 5
+                    labels[i] = health_indicators[0]  # Healthy
 
-    for i in range(int(len(labels) * labelled_fraction)):  # Originally 3
-        labels[-i - 1] = health_indicators[1]  # Unhealthy
-    return torch.tensor(data, dtype=torch.float32), torch.tensor(labels, dtype=torch.float32)
+                for i in range(int(len(labels) * labelled_fraction)):  # Originally 3
+                    labels[-i - 1] = health_indicators[1]  # Unhealthy
+    return read_data, labels
     #else:
         #raise ValueError("No data loaded or empty dataset found.")
 
@@ -515,7 +511,7 @@ def objective(batch_size, learning_rate_AE, learning_rate, n_epochs_AE, n_epochs
     semi_targets = pass_semi_targets
 
     # Initialise a model
-    model = NeuralNet([train_data.shape[1], train_data.shape[2]])
+    model = NeuralNet([train_data[0].shape[0], train_data[0].shape[1]])
     model.to(device)
 
     # Convert batch size from float to integer
@@ -570,7 +566,7 @@ def hyperparameter_optimisation(train_samples, train_data, semi_targets, n_calls
     return opt_parameters
 
 
-def DeepSAD_train_run(dir, freq, file_name, opt=False):
+def DeepSAD_train_run(dir, file_name, opt):
     """
        Trains and runs the DeepSAD model
 
@@ -590,7 +586,8 @@ def DeepSAD_train_run(dir, freq, file_name, opt=False):
     gamma = 0.1  # Factor to reduce LR by at milestones
     gamma_AE = 0.1  # "
     eps = 1 * 10 ** (-6)  # Very small number to prevent zero errors
-
+    train_data = []
+    semi_targets = []
     # Training
     # batch_size = 128  # Include in HPO   - 50 to 150 (128 from paper)
     # learning_rate_AE = 0.0005  # Include in HPO - 0.0001 to 0.001 (0.0005)
@@ -630,14 +627,13 @@ def DeepSAD_train_run(dir, freq, file_name, opt=False):
 
         else:
             hyperparameters_df = pd.read_csv(filename_opt, index_col=0)
-
     for sample_count in range(len(samples)):
         test_sample = samples[sample_count]
-        if opt:
-            if pd.notna(hyperparameters_df.loc[f'{freq}_kHz', test_sample]):
-                print(f"Skipping fold {test_sample}-{freq} for file type {file_name} as it's already optimized.")
-                continue
-        print("--- ", freq, "kHz, Sample ", sample_count+1, " as test, (sample ", test_sample, ") ---")
+        #if opt:
+            #if pd.notna(hyperparameters_df.loc[test_sample]):
+                #print(f"Skipping fold {test_sample} for file type {file_name} as it's already optimized.")
+                #continue
+        print("--- "," Sample ", sample_count+1, " as test, (sample ", test_sample, ") ---")
 
         # Make new list of samples excluding test data
         temp_samples = copy.deepcopy(samples)
@@ -649,43 +645,50 @@ def DeepSAD_train_run(dir, freq, file_name, opt=False):
             sample = temp_samples[count]
 
             # Load training sample
-            temp_data, temp_targets = load_data(dir, samples, labelled_fraction, ignore)
+            temp_data, temp_targets = load_data(dir, sample, labelled_fraction, ignore)
             # Create new arrays for training data and targets
             if first:
-                arr_data = copy.deepcopy(temp_data)
-                arr_targets = copy.deepcopy(temp_targets)
+                arr_data = [copy.deepcopy(temp_data)]
+                arr_targets = [copy.deepcopy(temp_targets)]
                 first = False
 
             # Concatenate data and targets from other samples
             else:
-                arr_data = np.concatenate((arr_data, temp_data), axis=1)
-                arr_targets = np.concatenate((arr_targets, temp_targets))
+                arr_data.append(temp_data)
+                arr_targets.append(temp_targets)
                 
 
         # Normalise training data
-        normal_mn = np.mean(arr_data, axis=0)
-        normal_sd = np.std(arr_data, axis=0)
-        arr_data = (arr_data - normal_mn) / normal_sd
+        for i in range(len(arr_data)):
+            normal_mn = np.mean(arr_data[i], axis=0)
+            normal_sd = np.std(arr_data[i], axis=0)
+            arr_data[i] = (arr_data[i] - normal_mn) / normal_sd
 
         # Convert to pytorch tensors
-        train_data = torch.tensor(arr_data)
-        train_data.to(device)
-        semi_targets = torch.tensor(arr_targets)
-        semi_targets.to(device)
+        for i in range(len(arr_data)):
+            train_data.append(torch.tensor(arr_data[i]))
+            train_data[i].to(device)
+        
+        for i in range(len(arr_targets)):
+            semi_targets.append(torch.tensor(arr_targets[i]))
+            semi_targets[i].to(device)
 
         # Create list of data dimensions to set number of input nodes in neural network
-        size = [train_data.shape[1], train_data.shape[2]]
+        size = [train_data[0].shape[0], train_data[0].shape[1]]
         print(size)
         # Convert to dataset and create loader
-        train_dataset = TensorDataset(train_data, semi_targets)
+        train_dataset = []
+        for i in range(len(train_data)):
+            train_dataset.append(TensorDataset(train_data[i], semi_targets[i]))
 
         # Hyperparameter optimisation
+        print(opt)
         if opt:
             pass_fnwf = file_name_with_freq
-            simple_store_hyperparameters(hyperparameter_optimisation(temp_samples, train_data, semi_targets, n_calls=20, random_state=ds_seed), file_name, samples[sample_count], freq, dir)
+            simple_store_hyperparameters(hyperparameter_optimisation(temp_samples, train_data, semi_targets, n_calls=20, random_state=42), file_name, samples[sample_count], freq, dir)
         else:
             hyperparameters_df = pd.read_csv(os.path.join(dir, f"hyperparameters-opt-{file_name}.csv"), index_col=0)
-            hyperparameters_str = hyperparameters_df.loc[freq+"_kHz", samples[sample_count]]
+            hyperparameters_str = hyperparameters_df.loc[samples[sample_count]]
             optimized_params = eval(hyperparameters_str)
 
             train_loader = DataLoader(train_dataset, batch_size=int(optimized_params[0]), shuffle=True)
@@ -729,7 +732,6 @@ def DeepSAD_train_run(dir, freq, file_name, opt=False):
             #Graphs.HI_graph(list, dir, samples[sample_count] + " " + freq + "kHz")
 
             results[sample_count] = list
-    print(tensor.device)
     if opt:
         return hps
     else:
