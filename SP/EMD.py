@@ -68,7 +68,7 @@ df = pd.read_csv(r"SP\LowLevelFeaturesSample1.csv")
 imfs_df, iterations_dict, sd_dict = runEMD(df)
 
 # Save results
-imfs_df.to_csv(r"SP\OutputEMD" , index=False)
+imfs_df.to_csv(r"SP\OutputEMD.csv" , index=False)
 
 # Plot results
 plot_results(df, imfs_df, iterations_dict, sd_dict)
