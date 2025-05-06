@@ -10,8 +10,9 @@ def perform_fft(file_path, output_csv_path):
     Write the results to a CSV file.
     """
     # Parameters
-    sampling_period = 0.5  # seconds per cycle
-    fs = 1 / sampling_period  # samples per second (Hz)
+    fs = 2000000  # samples per second
+    sampling_period = 1 / fs
+
 
     # Load the CSV file
     df = pd.read_csv(file_path)
@@ -78,8 +79,8 @@ def perform_fft(file_path, output_csv_path):
     return results_df
 
 # Example usage:
-output_csv_path = r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample2FFT.csv'
-results_df = perform_fft(r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample2.csv', output_csv_path)
+output_csv_path = r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample1FFT.csv'
+results_df = perform_fft(r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample1.csv', output_csv_path)
 
 
 '''
