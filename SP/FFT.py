@@ -1,84 +1,56 @@
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.fft import fft, fftfreq
 
-def perform_fft(file_path, output_csv_path):
+def perform_fft(input_csv, output_csv, *, cycle_duration=0.5):
     """
-    Perform FFT on all columns except 'Time' from a CSV file.
-    Extract key features like Frequency, Amplitude, Rise-Time, Energy, Counts, Duration, and RMS.
-    Write the results to a CSV file.
+    Read `input_csv` with columns
+        Time (in cycles), Amplitude, Rise-Time, Energy, Counts, Duration, RMS
+    and write `output_csv` whose first column is Frequency (Hz) and the rest are
+    single-sided FFT magnitudes of every signal column.
+
+    The sampling frequency fs is **inferred**:
+        1. Convert Time → seconds by multiplying with `cycle_duration`.
+        2. Take the median of the non-zero Δt’s → dt.
+        3. fs = 1 / dt.
     """
-    # Parameters
-    fs = 2000000  # samples per second
-    sampling_period = 1 / fs
+    # -------- Load & sanity-check --------------------------------------------------
+    df = pd.read_csv(input_csv).dropna(how="all")
+    if "Time" not in df.columns:
+        raise ValueError("Missing 'Time' column needed for fs estimation.")
 
+    # ------------------ sampling rate ----------------------------------------------
+    t_sec = df["Time"].to_numpy(dtype=float) * cycle_duration
+    diffs = np.diff(t_sec)
+    diffs = diffs[diffs > 0]                 # ignore duplicates (Δt = 0)
+    if diffs.size == 0:
+        raise ValueError("All Time values are identical – can’t infer fs.")
+    dt  = np.median(diffs)
+    fs  = 1.0 / dt
 
-    # Load the CSV file
-    df = pd.read_csv(file_path)
+    # -------- Frequency grid -------------------------------------------------------
+    N      = len(t_sec)
+    freqs  = fftfreq(N, d=1/fs)
+    pos    = freqs >= 0
+    freqs  = freqs[pos]
 
-    # Drop rows that are completely empty (e.g., ",,,,,,")
-    df.dropna(how='all', inplace=True)
+    # -------- Build output frame ---------------------------------------------------
+    out = pd.DataFrame({"Frequency (Hz)": freqs})
 
-    # Drop 'Time' column if present
-    if 'Time' in df.columns:
-        df = df.drop(columns=['Time'])
+    for col in (c for c in df.columns if c != "Time"):
+        x   = df[col].to_numpy()
+        Xf  = fft(x)
+        Xf  = np.abs(Xf) / N          # magnitude spectrum, normalised
+        Xf[1:N//2] *= 2               # single-sided scaling
+        out[col] = Xf[pos]
 
+    # -------- Save & return --------------------------------------------------------
+    out.to_csv(output_csv, index=False)
+    return out
 
-    results = []
+# Example call:
+# perform_fft("Sample1.csv", "Sample1FFT.csv")
 
-    for column in df.columns:
-        data = df[column].values
-        N = len(data)
-
-        # Perform FFT
-        data_fft = fft(data)
-
-        # Normalize
-        data_fft = data_fft / N
-        if N % 2 == 0:
-            data_fft[1:N//2] *= 2  # For even length, adjust the positive frequencies
-        else:
-            data_fft[1:(N+1)//2] *= 2  # For odd length, adjust the positive frequencies
-
-        # Frequency bins
-        freqs = fftfreq(N, d=sampling_period)
-
-        # Only keep positive frequencies
-        mask = freqs >= 0
-        freqs_pos = freqs[mask]
-        data_fft_pos = data_fft[mask]
-
-        # Calculate features
-        amplitude = np.abs(data_fft_pos)
-        rms = np.sqrt(np.mean(np.square(amplitude)))  # RMS calculation
-        energy = np.sum(np.square(amplitude))  # Energy is the sum of squared amplitudes
-        rise_time = np.max(amplitude)  # Placeholder for rise-time (to be defined appropriately)
-        counts = len(amplitude)  # Number of data points
-        duration = N * sampling_period  # Duration in seconds
-
-        # Append results for this column
-        for freq, amp in zip(freqs_pos, amplitude):
-            results.append({
-                'Frequency': freq,
-                'Amplitude': amp,
-                'Rise-Time': rise_time,
-                'Energy': energy,
-                'Counts': counts,
-                'Duration': duration,
-                'RMS': rms
-            })
-    
-
-    # Convert results to a DataFrame
-    results_df = pd.DataFrame(results)
-
-    # Save the results to a CSV file
-    results_df.to_csv(output_csv_path, index=False)
-
-    return results_df
-
-# Example usage:
 output_csv_path = r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample1FFT.csv'
 results_df = perform_fft(r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample1.csv', output_csv_path)
 
