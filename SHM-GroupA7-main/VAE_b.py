@@ -15,6 +15,13 @@ import matplotlib.image as mpimg
 import random
 from tqdm import tqdm
 
+''' NOTES
+
+1. In VAE_optimize_hyperparameters() add input variable for expected_cols = ['Amplitude',....], so we can use function for other datasets 
+2. In VAE_optimize_hyperparameters() make input value target_rows for VAE_merge_data an input variable in AE_optimize_hyperparameters()
+3. Rename VAE optimization files with similar names
+4. In VAE_optimize_hyperparameters() add n_sample id's as a variable so other datasets can use this'''
+
 def VAE_merge_data(sample_filenames, target_rows=12000):
     """
     Load and flatten AE data from each sample. Interpolates each feature column to `target_rows`,
@@ -570,11 +577,13 @@ def VAE_hyperparameter_optimisation(vae_train_data, vae_test_data, vae_scaler,
     Returns:
         - opt_parameters (list): List containing the best parameters found for that fold, and the error value (3 / fitness)
     """
+
+    # Make results reproducable by setting the same random seed for tensorflow and numpy
     random.seed(vae_seed)
     tf.random.set_seed(vae_seed)
     np.random.seed(vae_seed)
 
-    # Define space over which hyperparameter optimization will be performed
+    # Define space over which hyperparameter optimization will be performed (hyperparameter range and name set)
     space = [
         Integer(40, 60, name='hidden_1'),
         Integer(5, 10, name='batch_size'),
@@ -585,16 +594,22 @@ def VAE_hyperparameter_optimisation(vae_train_data, vae_test_data, vae_scaler,
         Real(2.6, 3, name='moloss_coeff')
     ]
 
-    # Use the decorator to automatically convert parameters to keyword arguments
+    # Use the decorator to automatically convert parameters proposed by optimizer to keyword arguments for objective funtion
+    # [50, 8, 0.003, 550, 0.06, 1.6, 2.8] → hidden_1=50, batch_size=8, ...
     @use_named_args(space)
 
     # Same objective function as before, defined here again, couldn't get it to work otherwise for some reason?
+    # Inner function defining the objective to minimize: in this case, the error value from VAE model evaluation.
+
     def VAE_objective(hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff):
+
+        # Reset seeds for each trial (important for deterministic results), model training is reproducable for each trial
         global vae_seed
         random.seed(vae_seed)
         tf.random.set_seed(vae_seed)
         np.random.seed(vae_seed)
 
+        # Prints current trial parameters
         print(
             f"Trying parameters: hidden_1={hidden_1}, batch_size={batch_size}, learning_rate={learning_rate}, "
             f"epochs={epochs}, reloss_coeff={reloss_coeff}, klloss_coeff={klloss_coeff}, moloss_coeff={moloss_coeff}")
@@ -753,15 +768,25 @@ def VAE_optimize_hyperparameters(csv_dir, n_calls_per_sample=40):
     Run leave-one-out cross-validation on 12 samples to optimize VAE hyperparameters.
     Saves the best set of hyperparameters per test sample in a CSV.
     """
+
+    # Declares these variables as global, a.k.a. the function will use and modify these global variables (Defined elsewhere)
     global vae_train_data, vae_test_data, vae_scaler, file_type, panel, freq, vae_seed
 
+    # Converts csv_dir into an absolute path — ensures reliable file handling regardless of how the path was passed in.
     csv_dir = os.path.abspath(csv_dir)
+
+    # Creates list of sample id names and list of filepaths to save all csv files
     all_ids = [f"Sample{i}" for i in range(1, 13)]
     all_paths = [os.path.join(csv_dir, f"{sid}Interp.csv") for sid in all_ids]
+
+    # initiate list to store hyperparams for each sample
     results = []
 
+    # Start looping through samples
     for i, test_id in enumerate(all_ids):
         print(f"\nOptimizing hyperparams: TEST={test_id}")
+
+        # Sets panel global variable to current sample name and resets freq and file_type (not used)
         panel = test_id  # Legacy naming
         freq = None
         file_type = None
@@ -770,43 +795,46 @@ def VAE_optimize_hyperparameters(csv_dir, n_calls_per_sample=40):
         test_path = all_paths[i]
         train_paths = [p for j, p in enumerate(all_paths) if j != i]
 
-        # Load and flatten training data
+        # Load and flatten (merge) training data csv files, resampling to 12000 rows
         vae_train_data = VAE_merge_data(train_paths, target_rows=12000)
 
-        # Load and flatten test data (time-order)
+        # Load expected colums of test data excluding time
         df_test = pd.read_csv(test_path).drop(columns=['Time'])
         expected_cols = ['Amplitude', 'Energy', 'Counts', 'Duration', 'RMS']
         df_test = df_test[expected_cols]
 
         df_resampled = pd.DataFrame()
-        for col in df_test.columns:
+        for col in df_test.columns: # interpolates test data columns so they are sampe length as target rows of train data
             original = df_test[col].values
             x_original = np.linspace(0, 1, len(original))
             x_target = np.linspace(0, 1, 12000)
             interpolated = np.interp(x_target, x_original, original)
             df_resampled[col] = interpolated
 
-        vae_test_data = df_resampled.values.flatten(order='C').reshape(1, -1)
+        # Row major order flattening into 1D array (Row1, Row2, Row3... successive), then reshapes to go from one row to one column
+        vae_test_data = df_resampled.values.flatten(order='C').reshape(1, -1) 
 
         # Standardize
         vae_scaler = StandardScaler().fit(vae_train_data)
         vae_train_data = vae_scaler.transform(vae_train_data)
         vae_test_data = vae_scaler.transform(vae_test_data)
 
-        # Optimize
+        # Optimize - Runs optimization funtion to tune hyperparameters over 'n_calls_per_sample' trials
         best = VAE_hyperparameter_optimisation(vae_train_data=vae_train_data,
-    vae_test_data=vae_test_data,
-    vae_scaler=vae_scaler,
-    vae_seed=vae_seed,
-    file_type=file_type,
-    panel=panel,
-    freq=freq,
-    csv_dir=csv_dir,
-    n_calls=n_calls_per_sample,
-    random_state=vae_seed)
-        results.append((test_id, best[0], best[1]))
+                                               vae_test_data=vae_test_data,
+                                               vae_scaler=vae_scaler,
+                                               vae_seed=vae_seed,
+                                               file_type=file_type,
+                                               panel=panel,
+                                               freq=freq,
+                                               csv_dir=csv_dir,
+                                               n_calls=n_calls_per_sample,
+                                               random_state=vae_seed)
 
-    # Save results
+        # Stores tuple of: test_id, hyperparametes, and error in results list
+        results.append((test_id, best[0], best[1])) 
+
+    # Save results in df (save list of tuples in df with 3 cols) -> save df to csv file
     df_out = pd.DataFrame(results, columns=["", "params", "error"])
     df_out.to_csv(os.path.join(csv_dir, "hyperparameters-opt-samples.csv"))
     print(f"\n✅ Saved best parameters to {os.path.join(csv_dir, 'hyperparameters-opt-samples.csv')}")
