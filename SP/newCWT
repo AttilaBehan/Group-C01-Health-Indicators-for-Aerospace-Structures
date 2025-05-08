@@ -11,12 +11,12 @@ t = df.iloc[:, 0].values
 signal = df.iloc[:, 1].values
 
 # Define scales
-scales = np.arange(1, 31)  # Adjust as needed
+scales = np.arange(1, 31)
 
-# Perform CWT using Gaussian wavelet
-coef, freqs = pywt.cwt(signal, scales, 'morl')
+# Perform CWT using complex Morlet wavelet
+coef, freqs = pywt.cwt(signal, scales, 'cmor')
 
-# Plot the signal
+# Plot the original signal
 plt.figure(figsize=(15, 4))
 plt.plot(t, signal)
 plt.title("Input Signal")
@@ -26,10 +26,10 @@ plt.grid(True)
 plt.tight_layout()
 plt.show()
 
-# Plot the scalogram
+# Plot the scalogram with red-to-blue color map
 plt.figure(figsize=(15, 6))
-plt.imshow(t, cmap='bone',
-           aspect='auto', vmax=abs(coef).max(), vmin=-abs(coef).max())
+plt.imshow(np.abs(coef), extent=[t[0], t[-1], scales[-1], scales[0]],
+           interpolation='bilinear', cmap='coolwarm', aspect='auto', vmin=0, vmax=np.abs(coef).max())
 plt.title("Continuous Wavelet Transform (Scalogram)")
 plt.xlabel("Time")
 plt.ylabel("Scale")

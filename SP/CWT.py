@@ -1,38 +1,38 @@
-import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import pywt
-import os
+import pandas as pd
+from scipy.signal import cwt, ricker
 
-# Load the data
+# Load data
 df = pd.read_csv(r"SP\LowLevelFeaturesSample1.csv")
 
-# Create output directories
-os.makedirs('cwt_plots', exist_ok=True)
-os.makedirs('cwt_data', exist_ok=True)
+# Assuming first column is time, second is signal
+t = df.iloc[:, 0].values
+signal = df.iloc[:, 1].values
 
-# Define wavelet and scales
-wavelet = 'cmor1.5-1.0'  # Complex Morlet wavelet
-scales = np.arange(1, 64)  # You can adjust scales based on your data
+# Define scales (widths for Ricker)
+widths = np.arange(1, 31)
 
-# Process each numeric column
-for column in df.select_dtypes(include=[np.number]).columns:
-    signal = df[column].values
-    coefficients, frequencies = pywt.cwt(signal, scales, wavelet)
+# Perform CWT using Ricker (Mexican hat) wavelet
+coef = cwt(signal, ricker, widths)
 
-    # Save coefficients to CSV
-    coeffs_df = pd.DataFrame(np.abs(coefficients), index=scales)
-    coeffs_df.to_csv(f'cwt_data/{column}_cwt.csv')
+# Plot the original signal
+plt.figure(figsize=(15, 4))
+plt.plot(t, signal)
+plt.title("Input Signal")
+plt.xlabel("Time")
+plt.ylabel("Amplitude")
+plt.grid(True)
+plt.tight_layout()
+plt.show()
 
-    # Plot the scalogram
-    plt.figure(figsize=(10, 6))
-    plt.imshow(np.abs(coefficients), extent=[0, len(signal), scales[-1], scales[0]], cmap='viridis', aspect='auto')
-    plt.colorbar(label='Magnitude')
-    plt.title(f'CWT Scalogram - {column}')
-    plt.xlabel('Time')
-    plt.ylabel('Scale')
-    plt.tight_layout()
-    plt.savefig(f'cwt_plots/{column}_scalogram.png')
-    plt.close()
-
-print("CWT processing complete. CSVs and plots saved.")
+# Plot the scalogram using coolwarm (red to blue)
+plt.figure(figsize=(15, 6))
+plt.imshow(np.abs(coef), extent=[t[0], t[-1], widths[-1], widths[0]],
+           interpolation='bilinear', cmap='coolwarm', aspect='auto', vmin=0, vmax=np.abs(coef).max())
+plt.title("Scalogram Using SciPy (Ricker Wavelet)")
+plt.xlabel("Time")
+plt.ylabel("Width (Scale)")
+plt.colorbar(label="Magnitude")
+plt.tight_layout()
+plt.show()
