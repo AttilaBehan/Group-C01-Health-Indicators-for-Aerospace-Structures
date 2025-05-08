@@ -2,54 +2,79 @@ import pandas as pd
 import numpy as np
 from scipy.fft import fft, fftfreq
 
-def perform_fft(input_csv, output_csv, *, cycle_duration=0.5):
+def perform_fft(
+        input_csv,              # path to raw file
+        output_csv,             # where the FFT spectra go
+        *,
+        cycle_duration = 0.5,   # seconds per cycle
+        cycle_block    = 500    # cycles per block (= 250 s here)
+    ):
     """
-    Read `input_csv` with columns
-        Time (in cycles), Amplitude, Rise-Time, Energy, Counts, Duration, RMS
-    and write `output_csv` whose first column is Frequency (Hz) and the rest are
-    single-sided FFT magnitudes of every signal column.
+    FFT for irregularly-sampled, cycle-counted data.
 
-    The sampling frequency fs is **inferred**:
-        1. Convert Time → seconds by multiplying with `cycle_duration`.
-        2. Take the median of the non-zero Δt’s → dt.
-        3. fs = 1 / dt.
+    1.  Divide the Time (cycles) axis into `cycle_block`-sized chunks.
+    2.  Drop empty chunks (no rows in that 500-cycle span).
+    3.  For each remaining chunk, take the median Δt (seconds).
+    4.  Average those Δt’s → dt   → fs = 1/dt.
+    5.  Do a single-sided FFT on every signal column using that fs.
+    6.  Save a tidy CSV:  Frequency (Hz), Amplitude_spectrum, Rise-Time_spectrum, …
+
+    The implicit assumption is that within each populated chunk the jitter is
+    small enough that one representative dt is “good enough” for a classical FFT.
+    If that isn’t true, see **Alternative approaches** below.
     """
-    # -------- Load & sanity-check --------------------------------------------------
+    # ---------------- Load & pre-check -------------------------------------------
     df = pd.read_csv(input_csv).dropna(how="all")
     if "Time" not in df.columns:
-        raise ValueError("Missing 'Time' column needed for fs estimation.")
+        raise ValueError("Missing 'Time' column.")
 
-    # ------------------ sampling rate ----------------------------------------------
-    t_sec = df["Time"].to_numpy(dtype=float) * cycle_duration
-    diffs = np.diff(t_sec)
-    diffs = diffs[diffs > 0]                 # ignore duplicates (Δt = 0)
-    if diffs.size == 0:
-        raise ValueError("All Time values are identical – can’t infer fs.")
-    dt  = np.median(diffs)
+    # Convert Time → seconds
+    t_cycles = df["Time"].to_numpy(dtype=float)
+    t_sec    = t_cycles * cycle_duration
+
+    # ---------------- Block the timeline -----------------------------------------
+    block_id = (t_cycles // cycle_block).astype(int)
+    df["block"] = block_id
+    df["t_sec"] = t_sec                       # keep for later use
+
+    dt_blocks = []
+    for bid, grp in df.groupby("block"):
+        if len(grp) < 2:                      # 0-or-1 row → no Δt info
+            continue
+        dt = np.diff(np.sort(grp["t_sec"]))
+        dt = dt[dt > 0]                       # ignore duplicates
+        if dt.size:
+            dt_blocks.append(np.median(dt))
+
+    if not dt_blocks:
+        raise ValueError("No populated 500-cycle blocks found – nothing to FFT.")
+
+    dt  = np.mean(dt_blocks)                  # average median Δt’s
     fs  = 1.0 / dt
 
-    # -------- Frequency grid -------------------------------------------------------
-    N      = len(t_sec)
+    # ---------------- Frequency axis ---------------------------------------------
+    N      = len(df)                          # all rows kept (including duplicates)
     freqs  = fftfreq(N, d=1/fs)
     pos    = freqs >= 0
     freqs  = freqs[pos]
 
-    # -------- Build output frame ---------------------------------------------------
+    # ---------------- Build output spectrum --------------------------------------
     out = pd.DataFrame({"Frequency (Hz)": freqs})
 
-    for col in (c for c in df.columns if c != "Time"):
-        x   = df[col].to_numpy()
-        Xf  = fft(x)
-        Xf  = np.abs(Xf) / N          # magnitude spectrum, normalised
-        Xf[1:N//2] *= 2               # single-sided scaling
+    signal_cols = [c for c in df.columns if c not in ("Time", "block", "t_sec")]
+    for col in signal_cols:
+        x  = df[col].to_numpy()
+        Xf = fft(x)
+        Xf = np.abs(Xf) / N
+        Xf[1:N//2] *= 2
         out[col] = Xf[pos]
 
-    # -------- Save & return --------------------------------------------------------
     out.to_csv(output_csv, index=False)
     return out
 
-# Example call:
+# Example call
 # perform_fft("Sample1.csv", "Sample1FFT.csv")
+
 
 output_csv_path = r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample1FFT.csv'
 results_df = perform_fft(r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample1.csv', output_csv_path)
