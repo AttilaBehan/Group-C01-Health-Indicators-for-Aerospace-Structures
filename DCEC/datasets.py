@@ -1,4 +1,14 @@
 import numpy as np
+import pandas as pd
+
+
+def load_aedata():
+    df = pd.read_csv("Training_dataset_20230130.csv", sep=";")
+    x = df[['A', 'R', 'D', 'CNTS', 'E', 'F']].values
+    y = df['Damage Mechanism'].values
+    from sklearn.preprocessing import StandardScaler
+    x = StandardScaler().fit_transform(x)
+    return x, y
 
 
 def load_mnist():
@@ -43,4 +53,6 @@ def load_usps(data_path='./data/usps'):
     y = np.concatenate((labels_train, labels_test))
     print('USPS samples', x.shape)
     return x, y
+
+
 

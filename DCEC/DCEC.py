@@ -7,7 +7,7 @@ from tensorflow.keras.layers import Layer, InputSpec
 from tensorflow.keras.utils import plot_model
 from sklearn.cluster import KMeans
 import metrics
-from ConvAE import CAE
+from ConvAE import dense_CAE
 import warnings
 
 warnings.simplefilter(action='ignore')
@@ -77,7 +77,7 @@ class DCEC(object):
     def __init__(self,
                  input_shape,
                  filters=[32, 64, 128, 10],
-                 n_clusters=10, 
+                 n_clusters=5,
                  alpha=1.0):
 
         super(DCEC, self).__init__()
@@ -86,17 +86,17 @@ class DCEC(object):
         self.input_shape = input_shape
         self.alpha = alpha
         self.pretrained = False
-        self.y_pred = [] 
+        self.y_pred = []
 
-        self.cae = CAE(input_shape, filters)
+        self.cae = dense_CAE(input_shape=input_shape)
         hidden = self.cae.get_layer(name='embedding').output
-        self.encoder = Model(inputs=self.cae.inputs, outputs=hidden)
+        self.encoder = Model(inputs=self.cae.input, outputs=self.cae.get_layer(name='embedding').output)
 
         # Define DCEC model
         clustering_layer = ClusteringLayer(self.n_clusters, name='clustering')(hidden)
         self.model = Model(inputs=self.cae.inputs, outputs=[clustering_layer, self.cae.outputs]) 
 
-    def pretrain(self, x, batch_size=256, epochs=1, optimizer='adam', save_dir='results/temp'):  #orig epochs=200
+    def pretrain(self, x, batch_size=256, epochs=200, optimizer='adam', save_dir='results/temp'):  #orig epochs=200
         print('...Pretraining...')
         self.cae.compile(optimizer=optimizer, loss='mse')
         from tensorflow.keras.callbacks import CSVLogger
@@ -149,7 +149,7 @@ class DCEC(object):
         # Step 2: initialize cluster centers using k-means
         t1 = time()
         print('Initializing cluster centers with k-means.')
-        kmeans = KMeans(n_clusters=self.n_clusters, n_init=20)
+        kmeans = KMeans(n_clusters=self.n_clusters, n_init=10)
         self.y_pred = kmeans.fit_predict(self.encoder.predict(x))
         y_pred_last = np.copy(self.y_pred)
         self.model.get_layer(name='clustering').set_weights([kmeans.cluster_centers_])
@@ -224,13 +224,13 @@ if __name__ == "__main__":
     # setting the hyper parameters
     import argparse
     parser = argparse.ArgumentParser(description='train')
-    parser.add_argument('--dataset', default='mnist', choices=['mnist', 'usps', 'mnist-test'])
-    parser.add_argument('--n_clusters', default=10, type=int)
-    parser.add_argument('--batch_size', default=256, type=int)
-    parser.add_argument('--maxiter', default=200, type=int) #default=20000
-    parser.add_argument('--gamma', default=0.1, type=float,
+    parser.add_argument('--dataset', default='aedata', choices=['aedata', 'mnist', 'usps', 'mnist-test'])
+    parser.add_argument('--n_clusters', default=5, type=int)
+    parser.add_argument('--batch_size', default=100, type=int)
+    parser.add_argument('--maxiter', default=10000, type=int) #default=20000
+    parser.add_argument('--gamma', default=0.01, type=float,
                         help='coefficient of clustering loss')
-    parser.add_argument('--update_interval', default=140, type=int)
+    parser.add_argument('--update_interval', default=100, type=int)
     parser.add_argument('--tol', default=0.001, type=float)
     parser.add_argument('--cae_weights', default=None, help='This argument must be given')
     parser.add_argument('--save_dir', default='results/temp')
@@ -242,7 +242,9 @@ if __name__ == "__main__":
         os.makedirs(args.save_dir)
 
     # load dataset
-    from datasets import load_mnist, load_usps
+    from datasets import load_mnist, load_usps, load_aedata
+    if args.dataset == 'aedata':
+        x, y = load_aedata()
     if args.dataset == 'mnist':
         x, y = load_mnist()
     elif args.dataset == 'usps':
@@ -259,9 +261,73 @@ if __name__ == "__main__":
     # begin clustering.
     optimizer = 'adam'
     dcec.compile(loss=['kld', 'mse'], loss_weights=[args.gamma, 1], optimizer=optimizer)
-    dcec.fit(x, y=y, tol=args.tol, maxiter=args.maxiter,
+
+    from sklearn.preprocessing import LabelEncoder
+
+    label_encoder = LabelEncoder()
+    y_encoded = label_encoder.fit_transform(y)
+
+    dcec.fit(x, y=y_encoded, tol=args.tol, maxiter=args.maxiter,
              update_interval=args.update_interval,
              save_dir=args.save_dir,
              cae_weights=args.cae_weights)
     y_pred = dcec.y_pred
-    print('acc = %.4f, nmi = %.4f, ari = %.4f' % (metrics.acc(y, y_pred), metrics.nmi(y, y_pred), metrics.ari(y, y_pred)))
+    print('acc = %.4f, nmi = %.4f, ari = %.4f' % (
+        metrics.acc(y_encoded, y_pred),
+        metrics.nmi(y_encoded, y_pred),
+        metrics.ari(y_encoded, y_pred)))
+
+    # from sklearn.manifold import TSNE
+    # import matplotlib.pyplot as plt
+    #
+    # # Step 1: Get latent representations
+    # z = dcec.encoder.predict(x, batch_size=256)
+    #
+    # # Step 2: Run t-SNE
+    # tsne = TSNE(n_components=2, random_state=42)
+    # z_tsne = tsne.fit_transform(z)
+    #
+    # # Step 3: Plot
+    # fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    #
+    # # Left: Cluster assignments
+    # axes[0].scatter(z_tsne[:, 0], z_tsne[:, 1], c=y_pred, cmap='tab10', s=5)
+    # axes[0].set_title("t-SNE: Colored by Predicted Clusters")
+    # axes[0].set_xlabel("Dim 1")
+    # axes[0].set_ylabel("Dim 2")
+    #
+    # # Right: Ground truth labels
+    # axes[1].scatter(z_tsne[:, 0], z_tsne[:, 1], c=y_encoded, cmap='tab10', s=5)
+    # axes[1].set_title("t-SNE: Colored by Ground Truth Labels")
+    # axes[1].set_xlabel("Dim 1")
+    # axes[1].set_ylabel("Dim 2")
+    #
+    # import matplotlib.pyplot as plt
+    # import matplotlib.patches as mpatches
+    # from sklearn.preprocessing import LabelEncoder
+    # import numpy as np
+    #
+    # # Example label array (replace this with your actual y)
+    # # y = np.array(['Fiber Break', 'Matrix Crack', 'Fiber Break', ...])
+    #
+    # # 1. Encode labels consistently
+    # label_encoder = LabelEncoder()
+    # y_encoded = label_encoder.fit_transform(y)  # y is your array of string labels
+    # label_names = label_encoder.classes_
+    #
+    # # 2. Define a consistent colormap
+    # cmap = plt.get_cmap('tab10')  # or 'tab20' if you have more than 10 classes
+    # colors = [cmap(i) for i in range(len(label_names))]
+    #
+    # # 3. Plot using numeric labels for color
+    # axes[1].scatter(z_tsne[:, 0], z_tsne[:, 1], c=y_encoded, cmap='tab10', s=5)
+    #
+    # # 4. Add legend with correct label-color mapping
+    # handles = [
+    #     mpatches.Patch(color=colors[i], label=label_names[i])
+    #     for i in range(len(label_names))
+    # ]
+    # axes[1].legend(handles=handles, title="True Labels", loc='best')
+    #
+    # plt.tight_layout()
+    # plt.show()
