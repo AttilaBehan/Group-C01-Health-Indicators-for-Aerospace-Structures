@@ -25,8 +25,6 @@ def perform_fft(
     """
     # ---------------- Load & pre-check -------------------------------------------
     df = pd.read_csv(input_csv).dropna(how="all")
-    if "Time" not in df.columns:
-        raise ValueError("Missing 'Time' column.")
 
     # Convert Time → seconds
     t_cycles = df["Time"].to_numpy(dtype=float)
@@ -45,9 +43,6 @@ def perform_fft(
         dt = dt[dt > 0]                       # ignore duplicates
         if dt.size:
             dt_blocks.append(np.median(dt))
-
-    if not dt_blocks:
-        raise ValueError("No populated 500-cycle blocks found – nothing to FFT.")
 
     dt  = np.mean(dt_blocks)                  # average median Δt’s
     fs  = 1.0 / dt
