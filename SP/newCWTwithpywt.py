@@ -59,5 +59,5 @@ def wavelet_transform(csv_path, wavelet='morl', max_scale=50, output_csv):
 
 wavelet_transform(
     csv_path=r"SP\LowLevelFeaturesSample1.csv",
-    output_csv=r"cwt_output.csv"
+    output_csv = r"SP\OutputCWT.csv"
 )
