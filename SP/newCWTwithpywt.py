@@ -2,37 +2,62 @@ import pywt
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+import os
 
-# Load data
-df = pd.read_csv(r"SP\LowLevelFeaturesSample1.csv")
+def wavelet_transform(csv_path, wavelet='morl', max_scale=50, output_csv):
+    """
+    Performs CWT on all signal columns in a CSV (except the first time column) and exports results to a CSV.
 
-# Assuming first column is time, second is signal
-t = df.iloc[:, 0].values
-signal = df.iloc[:, 1].values
+    Parameters:
+        csv_path (str): Path to the CSV file.
+        wavelet (str): The name of the wavelet to use. Default is 'morl'.
+        max_scale (int): Maximum scale for CWT. Default is 50.
+        output_csv (str): Output CSV file path to save the magnitude of CWT coefficients.
+    """
+    # Load data
+    df = pd.read_csv(csv_path)
+    time = df.iloc[:, 0].values
+    signal_columns = df.columns[1:]
+    scales = np.arange(1, max_scale + 1)
 
-# Define scales
-scales = np.arange(1, 50)
+    all_cwt_data = []
 
-# Perform CWT using complex Morlet wavelet
-coef, freqs = pywt.cwt(signal, scales, 'cmor')
+    for col in signal_columns:
+        signal = df[col].values
+        coef, freqs = pywt.cwt(signal, scales, wavelet)
+        mag = np.abs(coef)  # Get magnitude of complex coefficients
 
-# Plot the original signal
-plt.figure(figsize=(15, 4))
-plt.plot(t, signal)
-plt.title("Input Signal")
-plt.xlabel("Time")
-plt.ylabel("Amplitude")
-plt.grid(True)
-plt.tight_layout()
-plt.show()
+        # Flatten the result and label it
+        for scale_idx, scale_val in enumerate(scales):
+            all_cwt_data.append({
+                "Signal": col,
+                "Scale": scale_val,
+                "Frequency": freqs[scale_idx],
+                **{f"Time_{t:.3f}": mag[scale_idx, idx] for idx, t in enumerate(time)}
+            })
 
-# Plot the scalogram with color
-plt.figure(figsize=(15, 6))
-plt.imshow(np.abs(coef), extent=[t[0], t[-1], scales[-1], scales[0]],
-           interpolation='bilinear', cmap='jet', aspect='auto', vmin=0, vmax=np.abs(coef).max())
-plt.title("Continuous Wavelet Transform (Scalogram)")
-plt.xlabel("Time")
-plt.ylabel("Scale")
-plt.colorbar(label="Magnitude")
-plt.tight_layout()
-plt.show()
+        # Optional: plot each scalogram (can comment this out if too many)
+        plt.figure(figsize=(15, 6))
+        extent = [time[0], time[-1], freqs[-1], freqs[0]]
+        plt.imshow(mag, extent=extent,
+                   interpolation='bilinear', cmap='jet', aspect='auto',
+                   vmin=0, vmax=np.percentile(mag, 99))
+        plt.title(f"CWT Scalogram - {col}")
+        plt.xlabel("Time")
+        plt.ylabel("Frequency (Hz)")
+        plt.colorbar(label="Magnitude")
+        plt.tight_layout()
+        plt.show()
+
+    # Convert results to DataFrame
+    cwt_df = pd.DataFrame(all_cwt_data)
+
+    # Save to CSV
+    cwt_df.to_csv(output_csv, index=False)
+    print(f"CWT magnitudes saved to: {output_csv}")
+
+
+wavelet_transform(
+    csv_path=r"SP\LowLevelFeaturesSample1.csv",
+    output_csv=r"cwt_output.csv"
+)
