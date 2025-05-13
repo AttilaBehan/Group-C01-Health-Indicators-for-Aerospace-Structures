@@ -14,7 +14,7 @@ signal = df.iloc[:, 1].values
 scales = np.arange(1, 50)
 
 # Perform CWT using complex Morlet wavelet
-coef, freqs = pywt.cwt(signal, scales, 'gaus1')
+coef, freqs = pywt.cwt(signal, scales, 'cmor')
 
 # Plot the original signal
 plt.figure(figsize=(15, 4))

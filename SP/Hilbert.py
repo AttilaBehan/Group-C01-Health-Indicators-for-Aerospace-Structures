@@ -32,17 +32,17 @@ def perform_ht(file_path, output_csv_path, plot_dir=None):
         envelope = np.abs(analytic_signal)
         envelope_data[f'{column}_envelope'] = envelope
 
-        # # Plot
-        # plt.figure(figsize=(10, 4))
-        # plt.plot(time, signal, label='Original Signal', alpha=0.6)
-        # plt.plot(time, envelope, label='Hilbert Envelope', linewidth=2)
-        # plt.title(f'Hilbert Amplitude Envelope - {column}')
-        # plt.xlabel('Time')
-        # plt.ylabel('Amplitude')
-        # plt.legend()
-        # plt.grid(True)
-        # plt.tight_layout()
-
+        # Plot
+        plt.figure(figsize=(10, 4))
+        plt.plot(time, signal, label='Original Signal', alpha=0.6)
+        plt.plot(time, envelope, label='Hilbert Envelope', linewidth=2)
+        plt.title(f'Hilbert Amplitude Envelope - {column}')
+        plt.xlabel('Time')
+        plt.ylabel('Amplitude')
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
         # if plot_dir:
         #     plt.savefig(os.path.join(plot_dir, f'{column}_envelope.png'))
         #     plt.close()
@@ -58,7 +58,7 @@ def perform_ht(file_path, output_csv_path, plot_dir=None):
 
 
 envelope_df = perform_ht(
-    file_path=r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample2.csv',
-    output_csv_path=r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample2HT.csv',
+    file_path=r"SP\LowLevelFeaturesSample1.csv",
+    output_csv_path=r"SP\OutputCWT.csv",
     plot_dir=None  # Set to None to disable saving plots
 )
