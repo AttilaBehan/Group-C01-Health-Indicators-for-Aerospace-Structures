@@ -68,8 +68,8 @@ def perform_stft(file_path, output_path, window='hann', nperseg=500, noverlap=25
     return results
 
 # Example usage:
-input_file = r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample2.csv'
-output_file = r'C:\Users\macpo\Desktop\TU Delft\Y2\Q3\project\Low_Features_500_500_CSV\Sample2STFT.csv'
+input_file = r"SP\LowLevelFeaturesSample1.csv"
+output_file = r'SP\OutputCWT.csv'
 perform_stft(input_file, output_file)
 
 
