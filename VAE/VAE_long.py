@@ -7,7 +7,7 @@ import scipy.interpolate as interp
 from skopt import gp_minimize
 from skopt.space import Real, Integer
 from skopt.utils import use_named_args
-from Prognostic_criteria import fitness, test_fitness, scale_exact
+from Prog_crit import fitness, test_fitness, scale_exact
 import os
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
@@ -272,7 +272,7 @@ class VAE(tf.keras.Model):
 ''' HI calculator based on reconstruction errors, 
 
     per timestep health scores: detect degradation at specific times, allows to check for monotonicity (penalize health decreases over time in VAE_loss)'''
-def compute_health_indicator(x, x_recon, k=3.0, target_rows=300, num_features=201):
+def compute_health_indicator(x, x_recon, k=0.05, target_rows=300, num_features=201):
     ''' x, x_recon should have same shape and be 2D tensors
         k = sensitivity parameter (larger values penalize errors more)'''
     #print(f'x shape: {x.shape}')
