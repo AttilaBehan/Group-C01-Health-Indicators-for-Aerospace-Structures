@@ -21,6 +21,15 @@ import inspect
 import sys
 import tensorflow_probability as tfp
 
+print(tf.__version__)
+print(tfp.__version__)
+
+from tensorflow.keras import layers, Model, regularizers
+from tensorflow.keras.callbacks import EarlyStopping
+import keras_tuner as kt
+
+train_once = True
+
 ''' I am trying a new VAE model, the structure of the model itself is almost the same, these are the changes:
 
     1. New HI computation, due to noisy reconstruction error and exponential function. 
@@ -43,132 +52,558 @@ import tensorflow_probability as tfp
 class VAE_Seed():
     vae_seed = 42
 
+def generate_equidistant_timestamps(target_rows):
+    return np.linspace(0, 1, target_rows)
 
-'''Defines Keras VAE model'''
+''' REGULARIZED VAE
+        - Has dropout after Dense layers so it doesn't overfit on the small dataset (only have 10 samples)
+        - L2 Weight Decay kernel_regularizer=regularizers.l2() Keeps weights small for better generalization
+        - Feature dropout, makes the HI more robust, helpful if you have missing sensors'''
 
-class VAE(tf.keras.Model):
-    # Contructor method which initializes VAE, hidden_2 = size of latent space, usually smaller than hidden_1
-    def __init__(self, input_dim, hidden_1, hidden_2=10):
-        # Calls parent class constructor to initialize model properly
-        super(VAE, self).__init__()
+class RegularizedHealthVAE(Model):
+    def __init__(self, num_features=201, target_rows=300, latent_dim=32, 
+                 dropout_rate=0.2, l2_weight=1e-4):
+        super().__init__()
+        self.num_features = num_features
+        self.target_rows = target_rows
+        self.latent_dim = latent_dim
+        
+        # L2 regularization config (computes sum of the squared values of all the weights, penalizes large weight values so one weight doesn't dominate)
+        kernel_reg = regularizers.l2(l2_weight)
+        
+        # Feature weights with dropout (This model is very likely to overfit so I'm adding dropout)
+        self.feature_dropout = layers.Dropout(dropout_rate)
 
-        # Storing model parameters
-        self.input_dim = input_dim
-        self.hidden_1 = hidden_1
-        self.hidden_2 = hidden_2
-
-        # Initialization of weights (to improve stability of training, with seed for reproducability)
-        initializer = tf.keras.initializers.GlorotUniform(seed=VAE_Seed.vae_seed)
-
-        # Encoder Network 
-            # Sequential = linear stack of layers
-            # layers: input (with input dim), dense (hidden_1 with signoid activation function), dense (hidden_2 * 2, bc outputs mean and log-variance)
+        self.feature_weights = tf.Variable(
+            tf.ones(self.num_features),
+            trainable=True,
+            constraint=lambda x: tf.nn.softmax(x)  # makes sure weights add up to 1
+        )
+        
+        # Encoder with dropout -> processes each time step individually with TimeDistributed
         self.encoder = tf.keras.Sequential([
-            tf.keras.layers.InputLayer(input_shape=(input_dim,)),
-            tf.keras.layers.Dense(hidden_1, activation='relu', kernel_initializer=initializer, bias_initializer='zeros'),
-            tf.keras.layers.Dense(hidden_2 * 2, kernel_initializer=initializer, bias_initializer='zeros'),
+            layers.TimeDistributed(
+                layers.Dense(128, kernel_regularizer=kernel_reg),
+                input_shape=(target_rows, num_features)
+            ),
+            layers.Dropout(dropout_rate),
+            layers.Flatten(),
+            layers.Dense(256, kernel_regularizer=kernel_reg),
+            layers.Dropout(dropout_rate),
+            layers.Dense(2 * latent_dim)  # mean and logvar so dim * 2
         ])
-
-        # Decoder Network
-            # Takes latent space (hidden_2) as input, then reconstructs by reversing Encoder layers
+        
+        # Decoder with matching dimensions (found that this is less efficient but we wanna calculate the reconstruction loss)
         self.decoder = tf.keras.Sequential([
-            tf.keras.layers.InputLayer(input_shape=(hidden_2,)),
-            tf.keras.layers.Dense(hidden_1, activation='relu', kernel_initializer=initializer, bias_initializer='zeros'),
-            tf.keras.layers.Dense(input_dim, kernel_initializer=initializer, bias_initializer='zeros'),
+            layers.Dense(256, kernel_regularizer=kernel_reg),
+            layers.Dropout(dropout_rate),
+            layers.Dense(target_rows * num_features),
+            layers.Reshape((target_rows, num_features)),
+            layers.TimeDistributed(
+                layers.Dense(num_features, kernel_regularizer=kernel_reg)
+            )
         ])
+        
+        # Healthy state tracking - Reference for healthy state, updated during training (this will be used for the new HI based on mahalanobis distance in latent space)
+        self.healthy_ref = tf.Variable(tf.zeros(latent_dim), trainable=False)
 
-    # Encoding method
+        # Loss weights - weight for two losses, latent space distance and reconsrtuction, where alpha is multiplied by latent space HI
+        self.alpha = tf.Variable(0.7, trainable=True, constraint=lambda x: tf.clip_by_value(x, 0, 1))
+        
     def encode(self, x):
-        mean_logvar = self.encoder(x)  # Passes input 'x' through encoder
-        mean, logvar = tf.split(mean_logvar, num_or_size_splits=2, axis=1)  # Splits outputs mean and log(var) 
+        h = self.encoder(x)
+        mean, logvar = tf.split(h, num_or_size_splits=2, axis=1)
         return mean, logvar
-
-    # Reparametrization trick 
-        # Enables backpropagation through random sampling
-    def reparameterize(self, mean, logvar):
-        eps = tf.random.normal(shape=tf.shape(mean))  # Samples noise from standard normal distribution
-        return mean + tf.exp(0.5 * logvar) * eps  # calculates z = mu + sigma * epsilon, where sigma = exp(0.5*logvar)
-
-    # Decoding method
-    def decode(self, z):
-        return self.decoder(z) # Reconstructs input from latent variable z
-
-    # Forward pass
-    def call(self, inputs, training=None):
-        mean, logvar = self.encode(inputs) # Encoding
-        z = self.reparameterize(mean, logvar) # Reparametrizing
-        x_recon = self.decode(z) # Decoding
-        return x_recon, mean, logvar, z # Returning reconstructed input, latent distribution parametyers, sampled latent variable
     
+    def reparameterize(self, mean, logvar):
+        eps = tf.random.normal(shape=tf.shape(mean))
+        return eps * tf.exp(logvar * 0.5) + mean
+    
+    def decode(self, z):
+        return self.decoder(z)
+    
+    def call(self, x, training=False):
+        # Check shape of databeing put into VAE
+        if x.shape[1:] != (self.target_rows, self.num_features):
+            raise ValueError(f"Input shape must be (batch, {self.target_rows}, {self.num_features})")
+        # Applying featur dropout during training
+        if training:
+            x = self.feature_dropout(x)
+        
+        mean, logvar = tf.split(self.encoder(x, training=training), num_or_size_splits=2, axis=1)
+        z = self.reparameterize(mean, logvar)
+        x_recon = self.decoder(z, training=training)
+        return x_recon, mean, logvar, z
+    
+    def compute_health_indicator(self, x, x_recon, z_mean, z_logvar):
+        """Combined latent and reconstruction-based health indicator"""
+        # Latent-based health (compares current distance to healthy reference in latent space)
+        z_var = tf.exp(z_logvar) + 1e-6  # turns logvar back to var and adds small number to make sure we don't divide by zero
+        latent_dist = tf.reduce_sum(
+            tf.square(z_mean - self.healthy_ref) / z_var,
+            axis=1
+        )
+        latent_health = tf.exp(-0.5 * latent_dist)  # higher distance, further from healthy, lower health
+        
+        # Reconstruction-based health, similar to initial HI function, now with trainable weights
+        squared_errors = tf.square(x - x_recon)
+        weighted_errors = squared_errors * self.feature_weights[None, None, :]
+        recon_errors = tf.reduce_mean(weighted_errors, axis=[1, 2])
+        recon_health = tf.exp(-recon_errors)
+        
+        # Combined health indicator
+        health = self.alpha * latent_health + (1 - self.alpha) * recon_health
+        return health
+    
+    def monotonicity_loss(self, health):
+        """Penalize non-monotonic behavior"""
+        diffs = health[1:] - health[:-1]
+        violations = tf.maximum(diffs, 0)  # Only increasing health is penalized (structure can't cure itself)
+        return tf.reduce_mean(tf.square(violations))
+    
+    def trendability_loss(self, health, timesteps):
+        """Encourage negative correlation with time"""
+        # Compute correlation between health and timesteps
+        health_flat = tf.reshape(health, [-1])
+        timesteps_flat = tf.reshape(timesteps, [-1])
+        
+        # Pearson correlation
+        correlation = tfp.stats.correlation(health_flat, timesteps_flat)
+        return tf.square(correlation + 1)  # Penalize if not perfectly negative correlation
+    
+    def train_step(self, data):
+        x, timesteps = data  # Make sure to enter data in the correct order when training
+        
+        with tf.GradientTape() as tape:
+            # Forward pass
+            x_recon, mean, logvar, z = self(x)
+            
+            # Compute kl and reconstruction losses
+            recon_loss = tf.reduce_mean(tf.square(x - x_recon))
+            kl_loss = -0.5 * tf.reduce_mean(1 + logvar - tf.square(mean) - tf.exp(logvar))
+            
+            # Health indicator and its losses
+            health = self.compute_health_indicator(x, x_recon, mean, logvar)
+            mono_loss = self.monotonicity_loss(health)
+            trend_loss = self.trendability_loss(health, timesteps)
+            
+            # Feature weight regularization -> contributes to losses (subtracted from) so we don't get one feature weight that is really high
+            weight_entropy = tf.reduce_sum(self.feature_weights * tf.math.log(self.feature_weights + 1e-9))
+            
+            # Combined loss
+            total_loss = (0.5 * recon_loss + 0.3 * kl_loss + 
+                         0.1 * mono_loss + 0.1 * trend_loss - 
+                         0.01 * weight_entropy)
+            
+        # Update healthy reference (exponential moving average)
+        if tf.equal(self.optimizer.iterations, 1):
+            self.healthy_ref.assign(mean[0])
+        else:
+            # Instead of fixed 0.99/0.01 weights
+            update_weight = tf.minimum(1.0/(self.optimizer.iterations + 1), 0.1)
+            self.healthy_ref.assign((1-update_weight) * self.healthy_ref + update_weight * tf.reduce_mean(mean[:5], axis=0))
+            #self.healthy_ref.assign(0.99 * self.healthy_ref + 0.01 * tf.reduce_mean(mean[:5], axis=0))
+            
+        # Apply gradients
+        gradients = tape.gradient(total_loss, self.trainable_variables)
+        # # Check for NaNs in gradients -> this was an issue with the last model, uncomment if necessary
+        # if any([tf.math.reduce_any(tf.math.is_nan(g)) for g in gradients if g is not None]):
+        #     print(f"NaN detected in gradients at epoch, skipping this step.")
+        #     return None  # Skip this step if NaNs detected
+        # gradients, _ = tf.clip_by_global_norm(gradients, clip_norm=1.0) # grad clipping to stabilize data
+        # Better gradient clipping (keeps same direction but smaller step in that direction)
+        gradients = [tf.where(tf.math.is_nan(g), tf.zeros_like(g), g) for g in gradients]
+        gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
+        # Weight update using gradients (zip(gradients, trainable_variables) pairs grads with weights and optimizer applies rule)
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        
+        return {
+            "total_loss": total_loss,
+            "recon_loss": recon_loss,
+            "kl_loss": kl_loss,
+            "mono_loss": mono_loss,
+            "trend_loss": trend_loss,
+            "health_mean": tf.reduce_mean(health),
+            # "latent_health": tf.reduce_mean(latent_health),
+            # "recon_health": tf.reduce_mean(recon_health),
+            "alpha": self.alpha
+        }
+    
+    def test_step(self, data):
+        x, timesteps = data
+        x_recon, mean, logvar, z = self(x)
+        health = self.compute_health_indicator(x, x_recon, mean, logvar)
+        
+        # Calculate metrics
+        recon_loss = tf.reduce_mean(tf.square(x - x_recon))
+        kl_loss = -0.5 * tf.reduce_mean(1 + logvar - tf.square(mean) - tf.exp(logvar))
+        mono_loss = self.monotonicity_loss(health)
+        trend_loss = self.trendability_loss(health, timesteps)
 
-''' VAE Model with more layers, batch normalization etc. (if needed)'''
+        # Combined loss
+        total_loss = (0.5 * recon_loss + 0.3 * kl_loss + 
+                        0.1 * mono_loss + 0.1 * trend_loss)
+        
+        # Monotonicity metric (higher is better)
+        diffs = health[1:] - health[:-1]
+        monotonicity = tf.reduce_mean(tf.cast(diffs <= 0, tf.float32))  # % of decreasing steps
+        
+        return {
+            "test_recon_loss": recon_loss,
+            "test_kl_loss": kl_loss,
+            "test_mono_loss": mono_loss,
+            "test_trendability_loss": trend_loss,
+            "test_total_loss": total_loss,
+            "test_monotonicity": monotonicity,
+            "test_health": health,
+        }
 
-# Defines Keras VAE model
-class VAE_deeper(tf.keras.Model):
-    # Contructor method which initializes VAE, hidden_2 = size of latent space, usually smaller than hidden_1
-    def __init__(self, input_dim, hidden_0, hidden_1, hidden_2=30):
-        # Calls parent class constructor to initialize model properly
-        super(VAE_deeper, self).__init__()
+''' TRAINING MODEL WITH VALIDATION SET:
+        - Early stopping
+        - Restores best weights if it needs to stop due to validation loss increasing'''
+def train_model(x_train, time_train, x_val, time_val):
+    vae = RegularizedHealthVAE(
+        num_features=201,
+        target_rows=300,
+        latent_dim=32,
+        dropout_rate=0.2,
+        l2_weight=1e-4
+    )
+    
+    vae.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3))
+    
+    early_stopping = EarlyStopping(
+        monitor='val_loss', 
+        patience=15,
+        restore_best_weights=True, # So we can have more patience and see if loss still goes down on validation set but return to optimal weights if it doesn't
+        min_delta=0.001 # delta is a small number for how much the loss has to go down by
+    )
+    
+    history = vae.fit(
+        x=(x_train, time_train),
+        validation_data=(x_val, time_val),
+        epochs=200,
+        batch_size=2,  # Processing 2 samples per batch rn, might change later
+        callbacks=[early_stopping],
+        verbose=1
+    )
+    return vae, history
 
-        # Storing model parameters
-        self.input_dim = input_dim
-        self.hidden_0 = hidden_0
-        self.hidden_1 = hidden_1
-        self.hidden_2 = hidden_2
+def train_model(x_train, time_train, x_val, time_val, 
+               num_features=201, target_rows=300, latent_dim=32,
+               dropout_rate=0.2, l2_weight=1e-4, initial_lr=1e-3):
+    """
+    Trains the Health Indicator VAE with validation and early stopping
+    
+    Args:
+        x_train: Training data (n_samples, 300, 201)
+        time_train: Normalized timesteps (n_samples, 300)
+        x_val: Validation data (n_val_samples, 300, 201)
+        time_val: Validation timesteps (n_val_samples, 300)
+        num_features: Number of features per timestep
+        target_rows: Number of timesteps per sample
+        latent_dim: Size of latent space
+        dropout_rate: Dropout probability (0-1)
+        l2_weight: L2 regularization strength
+        initial_lr: Initial learning rate
+        
+    Returns:
+        Trained model and training history
+    """
+    
+    # Init VAE model
+    vae = RegularizedHealthVAE(
+        num_features=num_features,
+        target_rows=target_rows,
+        latent_dim=latent_dim,
+        dropout_rate=dropout_rate,
+        l2_weight=l2_weight
+    )
+    
+    # Optimizer 
+    optimizer = tf.keras.optimizers.Adam(
+        learning_rate=initial_lr, # lr is going to be adjusted by scheduler (will decrease when the validation loss stops decreasing)
+        clipnorm=1.0  # Gradient clipping for stability
+    )
+    vae.compile(optimizer=optimizer)
+    
+    # Early stopping with training using validation data
+    early_stopping = EarlyStopping(
+        monitor='val_loss',
+        patience=15, 
+        restore_best_weights=True,  # Goes back to best weights if it stops due to val loss increasing, can make patience higher if we want (will cost more time tho)
+        min_delta=0.001, # Small number for minimum decrease in val loss to continue training
+        verbose=1 # Prints a message if it has to stop due to val loss
+    )
+    
+    # Reducing lr when val loss starts decreasing less (plateau)
+    lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(
+        monitor='val_loss',
+        factor=0.5, # lr will change by factor if plateauing hapens
+        patience=5, # Waits 5 epochs before decreasing lr
+        min_lr=1e-5, 
+        verbose=1 # Prints if lr is reduced
+    )
+    
+    # ChatGPT function for checking if data has right shape, figure out what it means later, too tired rn
+    def validate_shapes(data, name):
+        x, t = data
+        assert x.shape[1:] == (target_rows, num_features), \
+            f"{name} data shape mismatch"
+        assert t.shape == x.shape[:2], \
+            f"{name} timesteps shape mismatch"
+    
+    # Checks shapes of training and validation data
+    validate_shapes((x_train, time_train), "Training")
+    validate_shapes((x_val, time_val), "Validation")
+    
+    # Start trainging model
+    history = vae.fit(
+        x=(x_train, time_train), # THIS IS A TUPPLE!!!
+        validation_data=(x_val, time_val), 
+        epochs=200,  
+        batch_size=2, # Processing 2 samples per batch rn, might change later
+        callbacks=[early_stopping, lr_scheduler],
+        verbose=1 # Shows progress bar, yay chat for teaching me this one lol
+    )
+    
+    # After training show validation loss and HI
+    print("\nTraining completed. Final metrics:")
+    print(f"- Best validation loss: {min(history.history['val_loss']):.4f}")
+    print(f"- Last health indicator mean: {history.history['health_mean'][-1]:.4f}")
+    
+    return vae, history
 
-        # Initialization of weights (to improve stability of training, with seed for reproducability)
-        initializer = tf.keras.initializers.GlorotUniform(seed=VAE_Seed.vae_seed)
+# Using model
+if __name__ == "__main__" and train_once:
+    # Quickly adding bullshit data to see if code is running or there are errors
+    num_samples = 10
+    x_train = tf.random.normal((num_samples, 300, 201))
+    time_train = tf.linspace(0., 1., num_samples)[:, None]  # Normalized 0-1
+    
+    x_val = tf.random.normal((300, 201))
+    time_val = tf.convert_to_tensor(np.linspace(0,1,300))
 
-        # Encoder Network 
-            # Sequential = linear stack of layers
-            # layers: input (with input dim), dense (hidden_1 with signoid activation function), dense (hidden_2 * 2, bc outputs mean and log-variance)
+    model, history = train_model(
+        x_train, time_train, x_val, time_val,
+        num_features=201,
+        target_rows=300,
+        latent_dim=32,
+        dropout_rate=0.3,  # Slightly higher for small dataset
+        l2_weight=1e-4,
+        initial_lr=1e-3)
+
+    # Plot training history
+    plt.plot(history.history['health_mean'], label='Train Health')
+    plt.plot(history.history['val_health_mean'], label='Val Health')
+    plt.legend()
+
+
+
+''' HYPERPARAMETER OPTIMIZATION -> new setup, same strategy, using Keras Tuner for Bayesian optimization'''
+def build_model(hp, input_shape):
+    model = RegularizedHealthVAE(
+        latent_dim=hp.Int('latent_dim', 16, 64, step=16),
+        input_shape=input_shape
+    )
+    
+    lr = hp.Float('lr', 1e-4, 1e-3, sampling='log')
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(lr),
+        # Not adding loss here because that is done internally
+    )
+    return model
+
+tuner = kt.BayesianOptimization(
+    build_model,
+    objective='val_loss',
+    max_trials=20,
+    directory='tuning',
+    project_name='vae_health'
+)
+
+tuner.search(
+    (x_train, time_train),
+    epochs=50,
+    validation_data=(x_val, time_val),
+    callbacks=[tf.keras.callbacks.EarlyStopping(patience=5)]
+)
+
+
+class HealthIndicatorVAE(Model):
+    def __init__(self, input_shape=(300, 201), latent_dim=32, feature_weights=None):
+        super(HealthIndicatorVAE, self).__init__()
+        self.input_shape_ = input_shape
+        self.latent_dim = latent_dim
+        self.target_rows, self.num_features = input_shape
+        
+        # Initialize feature weights (trainable)
+        if feature_weights is None:
+            initial_weights = tf.ones(self.num_features, dtype=tf.float32)
+        else:
+            initial_weights = tf.constant(feature_weights, dtype=tf.float32)
+            
+        self.feature_weights = tf.Variable(
+            initial_weights,
+            trainable=True,
+            constraint=lambda x: tf.nn.softmax(x)  # Normalizes so sum of weights = 1
+        )
+
+        # ENCODER ARCHITECTURE (Input -> Latent Space)
         self.encoder = tf.keras.Sequential([
-            tf.keras.layers.Input(shape=(input_dim,)),
-            tf.keras.layers.Dense(hidden_0, activation='relu', kernel_initializer=initializer),
-            tf.keras.layers.Dense(hidden_1, activation='relu', kernel_initializer=initializer, bias_initializer='zeros'),
-            tf.keras.layers.Dense(hidden_2 * 2, kernel_initializer=initializer, bias_initializer='zeros'),
-            tf.keras.layers.BatchNormalization()   # Normalizes latent params before splitting
+            # 1st Hidden Layer: Processes each timestep independently
+            layers.TimeDistributed(
+                layers.Dense(128, activation='relu'),  # 128 neurons per timestep
+                input_shape=input_shape
+            ),
+            # 2nd Hidden Layer: Flatten and process entire sequence
+            layers.Flatten(),  # 300*201 = 60,300 -> 256
+            layers.Dense(256, activation='relu'),  # 256 neurons
+            # Output both mean and logvar for latent distribution
+            layers.Dense(2 * latent_dim),  # 64 outputs (32 mean + 32 logvar)
         ])
-
-        # Decoder Network
-            # Takes latent space (hidden_2) as input, then reconstructs by reversing Encoder layers
+        
+        # DECODER ARCHITECTURE (Latent Space -> Reconstruction)
         self.decoder = tf.keras.Sequential([
-            tf.keras.layers.Input(shape=(hidden_2,)),
-            tf.keras.layers.Dense(hidden_1, activation='relu', kernel_initializer=initializer, bias_initializer='zeros'),
-            tf.keras.layers.Dense(hidden_0, activation='relu', kernel_initializer=initializer),
-            tf.keras.layers.Dense(input_dim, activation='linear', kernel_initializer=initializer, bias_initializer='zeros'),
+            # 1st Hidden Layer: Expand from latent space
+            layers.Dense(256, activation='relu'),  # 256 neurons
+            # 2nd Hidden Layer: Prepare for reshaping
+            layers.Dense(128 * self.num_features, activation='relu'),  # 128*201=25,728
+            # Reshape to original timestep structure
+            layers.Reshape((128, self.num_features)),  # 128 timesteps × 201 features
+            # Final reconstruction layer
+            layers.TimeDistributed(layers.Dense(self.num_features)),  # Linear activation
         ])
-
-    # Encoding methodpl
+        
+        # Reference for healthy state (updated during training)
+        self.healthy_ref = tf.Variable(
+            tf.zeros(latent_dim),
+            trainable=False
+        )
+        
+        # Loss weights
+        self.alpha = tf.Variable(0.7, trainable=True, constraint=lambda x: tf.clip_by_value(x, 0, 1))
+        
     def encode(self, x):
-        mean_logvar = self.encoder(x)  # Passes input 'x' through encoder
-        mean, logvar = tf.split(mean_logvar, num_or_size_splits=2, axis=1)  # Splits outputs mean and log(var) 
-
-        # Clamping logvar values for stabibity (to avoid extreme std deviations)
-        logvar = tf.clip_by_value(logvar, clip_value_min=-6.0, clip_value_max=6.0)
-
-        # Debugging, will remove this later:
-        # tf.print("Mean range:", tf.reduce_min(mean), "to", tf.reduce_max(mean))
-        # tf.print("Logvar range:", tf.reduce_min(logvar), "to", tf.reduce_max(logvar))
+        h = self.encoder(x)
+        mean, logvar = tf.split(h, num_or_size_splits=2, axis=1)
         return mean, logvar
-
-    # Reparametrization trick 
-        # Enables backpropagation through random sampling
-    def reparameterize(self, mean, logvar):
-        eps = tf.random.normal(shape=tf.shape(mean))  # Samples noise from standard normal distribution
-        return mean + tf.exp(0.5 * logvar) * eps  # calculates z = mu + sigma * epsilon, where sigma = exp(0.5*logvar)
-
-    # Decoding method
-    def decode(self, z):
-        return self.decoder(z) # Reconstructs input from latent variable z
-
-    # Forward pass
-    def call(self, inputs, training=None):
-        mean, logvar = self.encode(inputs) # Encoding
-        z = self.reparameterize(mean, logvar) # Reparametrizing
-        x_recon = self.decode(z) # Decoding
-        return x_recon, mean, logvar, z # Returning reconstructed input, latent distribution parametyers, sampled latent variable
     
+    def reparameterize(self, mean, logvar):
+        eps = tf.random.normal(shape=tf.shape(mean))
+        return eps * tf.exp(logvar * 0.5) + mean
+    
+    def decode(self, z):
+        return self.decoder(z)
+    
+    def call(self, x):
+        mean, logvar = self.encode(x)
+        z = self.reparameterize(mean, logvar)
+        x_recon = self.decode(z)
+        return x_recon, mean, logvar, z
+    
+    def compute_health_indicator(self, x, x_recon, z_mean, z_logvar):
+        """Combined latent and reconstruction-based health indicator"""
+        # Latent-based health
+        z_var = tf.exp(z_logvar) + 1e-6
+        latent_dist = tf.reduce_sum(
+            tf.square(z_mean - self.healthy_ref) / z_var,
+            axis=1
+        )
+        latent_health = tf.exp(-0.5 * latent_dist)
+        
+        # Reconstruction-based health
+        squared_errors = tf.square(x - x_recon)
+        weighted_errors = squared_errors * self.feature_weights[None, None, :]
+        recon_errors = tf.reduce_mean(weighted_errors, axis=[1, 2])
+        recon_health = tf.exp(-recon_errors)
+        
+        # Combined health indicator
+        health = self.alpha * latent_health + (1 - self.alpha) * recon_health
+        return health
+    
+    def monotonicity_loss(self, health):
+        """Penalize non-monotonic behavior"""
+        diffs = health[1:] - health[:-1]
+        violations = tf.maximum(diffs, 0)  # Only positive changes are violations
+        return tf.reduce_mean(tf.square(violations))
+    
+    def trendability_loss(self, health, timesteps):
+        """Encourage negative correlation with time"""
+        # Compute correlation between health and timesteps
+        health_flat = tf.reshape(health, [-1])
+        timesteps_flat = tf.reshape(timesteps, [-1])
+        
+        # Pearson correlation
+        correlation = tfp.stats.correlation(health_flat, timesteps_flat)
+        return tf.square(correlation + 1)  # Penalize if not perfectly negative correlation
+    
+    def train_step(self, data):
+        x, timesteps = data  # Assuming you pass timesteps as secondary input
+        
+        with tf.GradientTape() as tape:
+            # Forward pass
+            x_recon, mean, logvar, z = self(x)
+            
+            # Compute losses
+            recon_loss = tf.reduce_mean(tf.square(x - x_recon))
+            kl_loss = -0.5 * tf.reduce_mean(1 + logvar - tf.square(mean) - tf.exp(logvar))
+            
+            # Health indicator and its properties
+            health = self.compute_health_indicator(x, x_recon, mean, logvar)
+            mono_loss = self.monotonicity_loss(health)
+            trend_loss = self.trendability_loss(health, timesteps)
+            
+            # Feature weight regularization
+            weight_entropy = tf.reduce_sum(self.feature_weights * tf.math.log(self.feature_weights + 1e-9))
+            
+            # Combined loss
+            total_loss = (0.5 * recon_loss + 0.3 * kl_loss + 
+                         0.1 * mono_loss + 0.1 * trend_loss - 
+                         0.01 * weight_entropy)
+            
+        # Update healthy reference (exponential moving average)
+        if tf.equal(self.optimizer.iterations, 1):
+            self.healthy_ref.assign(mean[0])
+        else:
+            self.healthy_ref.assign(0.99 * self.healthy_ref + 0.01 * tf.reduce_mean(mean[:5], axis=0))
+            
+        # Apply gradients
+        grads = tape.gradient(total_loss, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
+        
+        return {
+            "total_loss": total_loss,
+            "recon_loss": recon_loss,
+            "kl_loss": kl_loss,
+            "mono_loss": mono_loss,
+            "trend_loss": trend_loss,
+            "health_mean": tf.reduce_mean(health),
+        }
+    
+    def test_step(self, data):
+        x, timesteps = data
+        x_recon, mean, logvar, z = self(x)
+        health = self.compute_health_indicator(x, x_recon, mean, logvar)
+        
+        # Calculate metrics
+        recon_loss = tf.reduce_mean(tf.square(x - x_recon))
+        kl_loss = -0.5 * tf.reduce_mean(1 + logvar - tf.square(mean) - tf.exp(logvar))
+        mono_loss = self.monotonicity_loss(health)
+        trend_loss = self.trendability_loss(health, timesteps)
+        
+        # Monotonicity metric (higher is better)
+        diffs = health[1:] - health[:-1]
+        monotonicity = tf.reduce_mean(tf.cast(diffs <= 0, tf.float32))  # % of decreasing steps
+        
+        return {
+            "test_loss": recon_loss + kl_loss,
+            "test_monotonicity": monotonicity,
+            "test_health": health,
+        }
+
+''' Old Work:'''
+
 
 ''' Resampling data'''
 
@@ -257,27 +692,6 @@ def compute_exp_health_indicator(x, x_recon, k=0.05, target_rows=300, num_featur
         #health = tf.nn.softplus(-k * errors)
     return health
 
-''' New HI fuction, need to change for our data shape'''
-
-def compute_health_indicator(x, x_recon, feature_weights, target_rows=300, num_features=201):
-    # feature_weights could be learned or based on feature importance
-    weighted_errors = feature_weights * tf.square(x - x_recon)
-    errors = tf.reduce_mean(weighted_errors, axis=1)
-    health = 1 - tf.math.sigmoid(errors)  # Smoother transition than exp
-    return health
-
-''' HI function based on latent space distance'''
-
-def compute_HI_z(z_mean, z_log_var, initial_z_mean):
-    # Compute Mahalanobis distance in latent space
-    z_variance = tf.exp(z_log_var)
-    distance = tf.reduce_sum(
-        tf.square(z_mean - initial_z_mean) / z_variance,
-        axis=1
-    )
-    health = 1 / (1 + distance)  # Maps to [0,1] range
-    return health
-
 ''' Separate loss functions (to track individual losses while making it easy to set the VAE to minimize total loss with one thing to return)'''
 
 ''' Monotonicity loss'''
@@ -298,3 +712,17 @@ def trendability_loss(health_indicators, time_steps):
     # Compute correlation with time (should be negative)
     correlation = tfp.stats.correlation(health_indicators, time_steps)
     return tf.square(correlation + 1)  # Penalize if not perfectly negative correlation
+
+def reconstruction_loss(x, x_recon, ):
+    x = tf.cast(x, tf.float32)
+    reloss = tf.reduce_sum(tf.square(x_recon - x), axis=1)
+    return reloss
+
+def kl_loss(logvar, mean):
+    # Term inside reduce_sum is KL divergence between N(mu, var) and N(0,1), axis=1 sums KL terms across latent dimensions for each sample, output shape = (batch_size,)
+    klloss = -0.5 * tf.reduce_sum(1 + logvar - tf.square(mean) - tf.exp(logvar+1e-8), axis=1) # Regularizes the latent space to follow a standard normal distribution N(0, I).
+    return klloss
+
+def total_loss(klloss, reloss, trloss, moloss, kl_loss_coeff, re_loss_coeff, tr_loss_coeff, mo_loss_coeff):
+    loss = tf.reduce_mean(re_loss_coeff * reloss + kl_loss_coeff * klloss + mo_loss_coeff * moloss + tr_loss_coeff * trloss)
+    return loss
