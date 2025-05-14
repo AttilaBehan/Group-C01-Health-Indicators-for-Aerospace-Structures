@@ -7,7 +7,7 @@ import scipy.interpolate as interp
 from skopt import gp_minimize
 from skopt.space import Real, Integer
 from skopt.utils import use_named_args
-from Prog_crit import fitness, test_fitness, scale_exact
+from Prognostic_criteria import fitness, test_fitness, scale_exact
 import os
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
@@ -18,12 +18,6 @@ from tqdm import tqdm
 from functools import partial
 import glob
 import inspect
-import sys
-# from pathlib import Path
-
-# # Get the parent directory of the current file's directory
-# project_root = Path(__file__).parent.parent
-# sys.path.append(str(project_root))
 
 # Set seed for reproducibility
 class VAE_Seed():
@@ -67,7 +61,21 @@ target_rows = 300
 # VAE merge data function and inputs for current dataset:
 target_rows = 300
 num_features=201
-hidden_2 = 10
+hidden_2 = 30
+
+''' Resampling test and validation data'''
+def resample_dataframe(df, target_rows):
+    """Resample each column in a DataFrame to target number of rows."""
+    resampled_data = {}
+    for col in df.columns:
+        original = df[col].values
+        x_original = np.linspace(0, 1, len(original))
+        x_target = np.linspace(0, 1, target_rows)
+        interpolated = np.interp(x_target, x_original, original)
+        resampled_data[col] = interpolated
+    return pd.DataFrame(resampled_data)
+
+
 def VAE_merge_data_per_timestep(sample_filenames, expected_cols, target_rows=300):
     """
     Purpose: Load multiple AE data files, resample each to have target_rows rows via interpolation, 
@@ -148,10 +156,14 @@ def VAE_merge_data_per_timestep_new(sample_filenames, expected_cols, target_rows
 
         df = pd.read_csv(path)
 
-        if 'Time' in df.columns:
-            df = df.drop(columns=['Time (Cycle)'])
-        if 'Unnamed: 0' in df.columns:
-            df = df.drop(columns=['Unnamed: 0'])
+        # Column cleanup
+        cols_to_drop = ['Time (Cycle)', 'Unnamed: 0', 'Time']  # Combine checks
+        df = df.drop(columns=[col for col in cols_to_drop if col in df.columns])
+
+        # if 'Time' in df.columns:
+        #     df = df.drop(columns=['Time (Cycle)'])
+        # if 'Unnamed: 0' in df.columns:
+        #     df = df.drop(columns=['Unnamed: 0'])
 
         missing = [col for col in expected_cols if col not in df.columns]
         if missing:
@@ -159,13 +171,15 @@ def VAE_merge_data_per_timestep_new(sample_filenames, expected_cols, target_rows
         df = df[expected_cols]
 
         # Resample each feature independently
-        df_resampled = pd.DataFrame()
-        for col in df.columns:
-            original = df[col].values
-            x_original = np.linspace(0, 1, len(original))
-            x_target = np.linspace(0, 1, target_rows)
-            interpolated = np.interp(x_target, x_original, original)
-            df_resampled[col] = interpolated
+        df_resampled = resample_dataframe(df, target_rows)
+
+        # df_resampled = pd.DataFrame()
+        # for col in df.columns:
+        #     original = df[col].values
+        #     x_original = np.linspace(0, 1, len(original))
+        #     x_target = np.linspace(0, 1, target_rows)
+        #     interpolated = np.interp(x_target, x_original, original)
+        #     df_resampled[col] = interpolated
 
         all_data.append(df_resampled)
 
@@ -180,29 +194,25 @@ def VAE_merge_data_per_timestep_new(sample_filenames, expected_cols, target_rows
 
     return data_scaled, scaler
 
-''' Resampling test and validation data'''
-def resample_dataframe(df, target_rows):
-    """Resample each column in a DataFrame to target number of rows."""
-    resampled_data = {}
-    for col in df.columns:
-        original = df[col].values
-        x_original = np.linspace(0, 1, len(original))
-        x_target = np.linspace(0, 1, target_rows)
-        interpolated = np.interp(x_target, x_original, original)
-        resampled_data[col] = interpolated
-    return pd.DataFrame(resampled_data)
+''' KL loss annealing'''
+def compute_kl_weight(epoch, total_epochs, max_klloss_coef, start_epoch=50):
+    if epoch < start_epoch:
+        return 0.0
+    return max_klloss_coef * ((epoch - start_epoch) / (total_epochs - start_epoch))
+
 
 ''' VAE Model:'''
 
 # Defines Keras VAE model
 class VAE(tf.keras.Model):
     # Contructor method which initializes VAE, hidden_2 = size of latent space, usually smaller than hidden_1
-    def __init__(self, input_dim, hidden_1, hidden_2=10):
+    def __init__(self, input_dim, hidden_0, hidden_1, hidden_2=30):
         # Calls parent class constructor to initialize model properly
         super(VAE, self).__init__()
 
         # Storing model parameters
         self.input_dim = input_dim
+        self.hidden_0 = hidden_0
         self.hidden_1 = hidden_1
         self.hidden_2 = hidden_2
 
@@ -213,23 +223,33 @@ class VAE(tf.keras.Model):
             # Sequential = linear stack of layers
             # layers: input (with input dim), dense (hidden_1 with signoid activation function), dense (hidden_2 * 2, bc outputs mean and log-variance)
         self.encoder = tf.keras.Sequential([
-            tf.keras.layers.InputLayer(input_shape=(input_dim,)),
+            tf.keras.layers.Input(shape=(input_dim,)),
+            tf.keras.layers.Dense(hidden_0, activation='relu', kernel_initializer=initializer),
             tf.keras.layers.Dense(hidden_1, activation='relu', kernel_initializer=initializer, bias_initializer='zeros'),
             tf.keras.layers.Dense(hidden_2 * 2, kernel_initializer=initializer, bias_initializer='zeros'),
+            tf.keras.layers.BatchNormalization()   # Normalizes latent params before splitting
         ])
 
         # Decoder Network
             # Takes latent space (hidden_2) as input, then reconstructs by reversing Encoder layers
         self.decoder = tf.keras.Sequential([
-            tf.keras.layers.InputLayer(input_shape=(hidden_2,)),
+            tf.keras.layers.Input(shape=(hidden_2,)),
             tf.keras.layers.Dense(hidden_1, activation='relu', kernel_initializer=initializer, bias_initializer='zeros'),
-            tf.keras.layers.Dense(input_dim, kernel_initializer=initializer, bias_initializer='zeros'),
+            tf.keras.layers.Dense(hidden_0, activation='relu', kernel_initializer=initializer),
+            tf.keras.layers.Dense(input_dim, activation='linear', kernel_initializer=initializer, bias_initializer='zeros'),
         ])
 
-    # Encoding method
+    # Encoding methodpl
     def encode(self, x):
         mean_logvar = self.encoder(x)  # Passes input 'x' through encoder
         mean, logvar = tf.split(mean_logvar, num_or_size_splits=2, axis=1)  # Splits outputs mean and log(var) 
+
+        # Clamping logvar values for stabibity (to avoid extreme std deviations)
+        logvar = tf.clip_by_value(logvar, clip_value_min=-6.0, clip_value_max=6.0)
+
+        # Debugging, will remove this later:
+        # tf.print("Mean range:", tf.reduce_min(mean), "to", tf.reduce_max(mean))
+        # tf.print("Logvar range:", tf.reduce_min(logvar), "to", tf.reduce_max(logvar))
         return mean, logvar
 
     # Reparametrization trick 
@@ -252,24 +272,120 @@ class VAE(tf.keras.Model):
 ''' HI calculator based on reconstruction errors, 
 
     per timestep health scores: detect degradation at specific times, allows to check for monotonicity (penalize health decreases over time in VAE_loss)'''
-def compute_health_indicator(x, x_recon, k=1.0, target_rows=300, num_features=201):
+def compute_health_indicator(x, x_recon, k=3.0, target_rows=300, num_features=201):
     ''' x, x_recon should have same shape and be 2D tensors
         k = sensitivity parameter (larger values penalize errors more)'''
     #print(f'x shape: {x.shape}')
+
+    # delta = 1.0
+
+    # if x.shape[0] == target_rows:
+    #     x_reshaped = tf.cast(tf.convert_to_tensor(x, dtype=tf.float64), tf.float32)
+    #     x_recon_reshaped = tf.cast(tf.convert_to_tensor(x_recon, dtype=tf.float32), tf.float32)
+
+    #     error = tf.abs(x_reshaped - x_recon_reshaped)
+    #     huber_loss = tf.where(error < delta,
+    #                           0.5 * tf.square(error),
+    #                           delta * (error - 0.5 * delta))
+    #     errors = tf.reduce_mean(huber_loss, axis=1)  # mean over features
+    #     health = tf.sigmoid(-k * errors)
+
+    # else:
+    #     x_reshaped = tf.reshape(x, (-1, target_rows, num_features))
+    #     x_recon_reshaped = tf.reshape(x_recon, (-1, target_rows, num_features))
+
+    #     x_reshaped = tf.cast(x_reshaped, tf.float32)
+    #     x_recon_reshaped = tf.cast(x_recon_reshaped, tf.float32)
+
+    #     error = tf.abs(x_reshaped - x_recon_reshaped)
+    #     huber_loss = tf.where(error < delta,
+    #                           0.5 * tf.square(error),
+    #                           delta * (error - 0.5 * delta))
+    #     errors = tf.reduce_mean(huber_loss, axis=2)  # mean over features
+    #     health = tf.sigmoid(-k * errors)
+
+
+
     if x.shape[0]==target_rows:
         x_reshaped = tf.convert_to_tensor(x, dtype=tf.float64)
         x_recon_reshaped = tf.convert_to_tensor(x_recon, dtype=tf.float32)
         # Make sure two x tensors have same float type:
         x_reshaped = tf.cast(x_reshaped, tf.float32)
         errors = tf.reduce_mean(tf.square(x_reshaped - x_recon_reshaped), axis=1) # Square of differences x and x_recon, then averages errors across features (axis=2), output shape = num samples, num timesteps (error per timestep per sample)
+        #mean_error = tf.reduce_mean(errors)
+        #health = tf.exp(-k * errors / (mean_error + 1e-8))
         health = tf.exp(-k * errors)  # Shape (1, target_rows)
+        #health = tf.sigmoid(-k * errors)
+        #health = tf.nn.softplus(-k * errors)
     else:
         x_reshaped = tf.reshape(x, (-1, target_rows, num_features))  # Reshape to 3D tensor and separate features again
         x_recon_reshaped = tf.reshape(x_recon, (-1, target_rows, num_features))
         # Make sure two x tensors have same float type:
         x_reshaped = tf.cast(x_reshaped, tf.float32)
         errors = tf.reduce_mean(tf.square(x_reshaped - x_recon_reshaped), axis=2) # Square of differences x and x_recon, then averages errors across features (axis=2), output shape = num samples, num timesteps (error per timestep per sample)
+        #mean_error = tf.reduce_mean(errors)
+        #health = tf.exp(-k * errors / (mean_error + 1e-8))
         health = tf.exp(-k * errors)  # Shape (n_samples, target_rows)
+        #health = tf.sigmoid(-k * errors)
+        #health = tf.nn.softplus(-k * errors)
+
+    #def compute_latent_norm_health_indicator(z, k=1.0):
+    #hi = tf.exp(-k * tf.norm(z, axis=2))  # L2 norm over latent dims per timestep
+    #return hi
+    return health
+
+def compute_health_indicator_cosine(x, x_recon, k=1.0, target_rows=300, num_features=201):
+    if x.shape[0] == target_rows:
+        x_reshaped = tf.cast(tf.convert_to_tensor(x, dtype=tf.float64), tf.float32)
+        x_recon_reshaped = tf.cast(tf.convert_to_tensor(x_recon, dtype=tf.float64), tf.float32)
+
+        x_norm = tf.nn.l2_normalize(x_reshaped, axis=1)
+        x_recon_norm = tf.nn.l2_normalize(x_recon_reshaped, axis=1)
+
+        cosine_sim = tf.reduce_sum(x_norm * x_recon_norm, axis=1)
+        health = tf.sigmoid(k * cosine_sim)
+
+    else:
+        x_reshaped = tf.reshape(x, (-1, target_rows, num_features))
+        x_recon_reshaped = tf.reshape(x_recon, (-1, target_rows, num_features))
+
+        x_reshaped = tf.cast(x_reshaped, tf.float32)
+        x_recon_reshaped = tf.cast(x_recon_reshaped, tf.float32)
+
+        x_norm = tf.nn.l2_normalize(x_reshaped, axis=2)
+        x_recon_norm = tf.nn.l2_normalize(x_recon_reshaped, axis=2)
+
+        cosine_sim = tf.reduce_sum(x_norm * x_recon_norm, axis=2)
+        health = tf.sigmoid(k * cosine_sim)
+
+    return health
+
+def compute_health_indicator_huber(x, x_recon, k=1.0, delta=1.0, target_rows=300, num_features=201):
+    if x.shape[0] == target_rows:
+        x_reshaped = tf.cast(tf.convert_to_tensor(x, dtype=tf.float64), tf.float32)
+        x_recon_reshaped = tf.cast(tf.convert_to_tensor(x_recon, dtype=tf.float64), tf.float32)
+
+        error = tf.abs(x_reshaped - x_recon_reshaped)
+        huber_loss = tf.where(error < delta,
+                              0.5 * tf.square(error),
+                              delta * (error - 0.5 * delta))
+        errors = tf.reduce_mean(huber_loss, axis=1)  # mean over features
+        health = tf.sigmoid(-k * errors)
+
+    else:
+        x_reshaped = tf.reshape(x, (-1, target_rows, num_features))
+        x_recon_reshaped = tf.reshape(x_recon, (-1, target_rows, num_features))
+
+        x_reshaped = tf.cast(x_reshaped, tf.float32)
+        x_recon_reshaped = tf.cast(x_recon_reshaped, tf.float32)
+
+        error = tf.abs(x_reshaped - x_recon_reshaped)
+        huber_loss = tf.where(error < delta,
+                              0.5 * tf.square(error),
+                              delta * (error - 0.5 * delta))
+        errors = tf.reduce_mean(huber_loss, axis=2)  # mean over features
+        health = tf.sigmoid(-k * errors)
+
     return health
 
 ''' Computes total loss - combines Reconstruction, KL Divergence and Monotonicity losses'''
@@ -277,9 +393,9 @@ def vae_loss(x, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, molos
     # Make x and x_recon same float type
     x = tf.cast(x, tf.float32)
     if x.shape[1]>0:
-        reloss = tf.reduce_sum(tf.square(x_recon - x), axis=0) # Sums squared errors across features for each sample in batch, output shape = (bathc_size,)
+        reloss = tf.reduce_sum(tf.square(x_recon - x), axis=1) # Sums squared errors across features for each sample in batch, output shape = (bathc_size,)
         # Term inside reduce_sum is KL divergence between N(mu, var) and N(0,1), axis=1 sums KL terms across latent dimensions for each sample, output shape = (batch_size,)
-        klloss = -0.5 * tf.reduce_mean(1 + logvar - tf.square(mean) - tf.exp(logvar+1e-8), axis=0) # Regularizes the latent space to follow a standard normal distribution N(0, I).
+        klloss = -0.5 * tf.reduce_sum(1 + logvar - tf.square(mean) - tf.exp(logvar+1e-8), axis=1) # Regularizes the latent space to follow a standard normal distribution N(0, I).
         # Computes health change in time: health[t]-health[t-1] (output shape = (batch_size, timesteps-1))
         diffs = health[1:] - health[:-1]
         # tf.nn.relu(-diffs) returns non-zero value of change if health decreases
@@ -288,7 +404,7 @@ def vae_loss(x, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, molos
     else:
         reloss = tf.reduce_sum(tf.square(x_recon - x), axis=1) # Sums squared errors across features for each sample in batch, output shape = (bathc_size,)
         # Term inside reduce_sum is KL divergence between N(mu, var) and N(0,1), axis=1 sums KL terms across latent dimensions for each sample, output shape = (batch_size,)
-        klloss = -0.5 * tf.reduce_mean(1 + logvar - tf.square(mean) - tf.exp(logvar+1e-8), axis=1) # Regularizes the latent space to follow a standard normal distribution N(0, I).
+        klloss = -0.5 * tf.reduce_sum(1 + logvar - tf.square(mean) - tf.exp(logvar+1e-8), axis=1) # Regularizes the latent space to follow a standard normal distribution N(0, I).
         # Computes health change in time: health[t]-health[t-1] (output shape = (batch_size, timesteps-1))
         diffs = health[:, 1:] - health[:, :-1]
         # tf.nn.relu(-diffs) returns non-zero value of change if health decreases
@@ -317,16 +433,30 @@ def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coef
         x_recon, mean, logvar, z = vae(batch_xs, training=True) # Training = true makes sure dropout layers are on
         # Computes HI from prev defined function
         health = compute_health_indicator(batch_xs, x_recon, target_rows=target_rows, num_features=num_features) # output size = (batch_size, timesteps)
+        health = tf.exp(-1.0*tf.norm(z, axis=1))
         # Computes loss from prev defined function (output = scalar loss value, averaged over batch)
         loss = vae_loss(batch_xs, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
+
+        klloss = -0.5 * tf.reduce_mean(1 + logvar - tf.square(mean) - tf.exp(logvar+1e-8), axis=1)
+        batch_xs = tf.cast(batch_xs, tf.float32)  # Add this line
+        reloss = tf.reduce_sum(tf.square(x_recon - batch_xs), axis=1) # Sums squared errors across features for each sample in batch, output shape = (bathc_size,)
+        diffs = health[1:] - health[:-1]
+        # tf.nn.relu(-diffs) returns non-zero value of change if health decreases
+        fealoss = tf.reduce_sum(tf.nn.relu(-diffs)) # sums all penalties across batches and timesteps
+
     # computes gradients of loss w.r.t. all trainable weights in VAE
     gradients = tape.gradient(loss, vae.trainable_variables) # Returns list of gradients (one per layer/variable)
+     # Optional: check for NaNs in gradients
+    if any([tf.math.reduce_any(tf.math.is_nan(g)) for g in gradients if g is not None]):
+        print(f"NaN detected in gradients at epoch, skipping this step.")
+        return None  # Skip this step if NaNs detected
+    gradients, _ = tf.clip_by_global_norm(gradients, clip_norm=1.0) # grad clipping to stabilize data
     # Weight update using gradients (zip(gradients, trainable_variables) pairs grads with weights and optimizer applies rule)
     optimizer.apply_gradients(zip(gradients, vae.trainable_variables))
-    return loss
+    return loss, klloss, reloss, fealoss
 
 ''' Apply the train_step() function to train the VAE'''
-def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=10, target_rows=300, patience=50, min_delta=1e-4):
+def VAE_train(sample_data, val_data, test_data, hidden_0, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=30, target_rows=300, patience=50, min_delta=1e-4):
     """
         Trains VAE on sample_data with inbuilt early stopping when validation diverges, then evaluates VAE on test_data
     
@@ -340,8 +470,6 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
         Returns: 
         - loss: for monitoring/plotting
     """
-
-    klloss_coeff = klloss_coeff/hidden_2
     # Reproducability
     random.seed(VAE_Seed.vae_seed)
     tf.random.set_seed(VAE_Seed.vae_seed)
@@ -352,9 +480,12 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
     display = 10 # display loss every 50 epochs
 
     # Initialize VAE model
-    vae = VAE(n_input, hidden_1, hidden_2)
+    vae = VAE(n_input, hidden_0, hidden_1, hidden_2)
     # Adam optimizer
-    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+    lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(0.001, decay_steps=100, decay_rate=0.9)
+    optimizer = tf.keras.optimizers.Adam(lr_schedule)
+    #optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+
     # Split sample_data into batches for memory efficiency
     train_dataset = tf.data.Dataset.from_tensor_slices(sample_data).batch(batch_size, drop_remainder=True)
     val_dataset = tf.data.Dataset.from_tensor_slices(val_data).batch(batch_size, drop_remainder=True)
@@ -363,6 +494,7 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
     # for tracking divergence with validation data
     best_val_loss = np.inf
     epochs_without_improvement = 0
+    klloss_coeff = klloss_coeff/hidden_2
 
     # Training loop
     begin_time = time()
@@ -372,12 +504,28 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
     epoch_losses = []
     for epoch in range(epochs):
         #print(f'Starting Train step {epoch}')
-        loss = train_step(vae, sample_data, optimizer, reloss_coeff, klloss_coeff, moloss_coeff)
-        epoch_losses.append(loss.numpy())
+        #loss = train_step(vae, sample_data, optimizer, reloss_coeff, klloss_coeff, moloss_coeff)
+        kl_weight = compute_kl_weight(epoch, epochs, klloss_coeff, start_epoch=50)
+        
+        current_epoch_losses = []
+        epoch_kl_losses = []
+        epoch_re_losses = []
+        epoch_mo_losses = []
+        for batch in train_dataset:
+            loss, klloss, reloss, moloss = train_step(vae, batch, optimizer, reloss_coeff, kl_weight, moloss_coeff)
+            if loss is None:
+                continue
+            current_epoch_losses.append(loss.numpy())
+            epoch_kl_losses.append(klloss.numpy())
+            epoch_re_losses.append(reloss.numpy())
+            epoch_mo_losses.append(moloss.numpy())
+        
+        avg_epoch_loss = np.mean(current_epoch_losses)
+        epoch_losses.append(avg_epoch_loss)
         #print(f'Completed Train step {epoch}')
         
         if epoch % display == 0:
-            print(f'Epoch {epoch}, Loss = {loss}')
+            print(f'Epoch {epoch}, Loss = {avg_epoch_loss} \t kl_loss = {np.mean(epoch_kl_losses)} \t re_loss = {np.mean(epoch_re_losses)} \t mo_loss = {np.mean(epoch_mo_losses)}')
 
         # batch_losses = []
         # for batch_xs in train_dataset:
@@ -392,6 +540,7 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
         #print(f'Starting validation step for epoch {epoch}')
         x_recon_val, mean_val, logvar_val, z = vae(val_data, training=False)
         val_health = compute_health_indicator(val_data, x_recon_val, target_rows=target_rows, num_features=num_features)
+        val_health = tf.exp(-1.0*tf.norm(z, axis=1))
         val_loss = vae_loss(val_data, x_recon_val, mean_val, logvar_val, val_health, reloss_coeff, klloss_coeff, moloss_coeff)
 
 
@@ -439,13 +588,15 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
     # x_recon_train = tf.data.Dataset.from_tensor_slices(x_recon_train).batch(batch_size, drop_remainder=True)
     # x_recon_test = tf.data.Dataset.from_tensor_slices(x_recon_test).batch(batch_size, drop_remainder=True)
     # x_recon_val = tf.data.Dataset.from_tensor_slices(x_recon_val).batch(batch_size, drop_remainder=True)
-    print(f'\n Exaluating trained VAE on validation set')
+    #print(f'\n Exaluating trained VAE on validation set')
     val_losses = []
     hi_val = []
     for val_batch in val_dataset:
         x_recon_val, mean_val, logvar_val, z = vae(val_batch, training=False)
-        print(f'\n Validation HI:')
+        val_hi = tf.norm(z, axis=1)
+        #print(f'\n Validation HI:')
         val_health = compute_health_indicator(val_batch, x_recon_val, target_rows=batch_size, num_features=num_features).numpy()
+        val_health = tf.exp(-1.0*tf.norm(z, axis=1))
         hi_val.append(val_health)
         if tf.size(val_health) > 0:  # skip empty returns if any
             val_loss_batch = vae_loss(val_batch, x_recon_val, mean_val, logvar_val, val_health,
@@ -454,16 +605,17 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
     val_loss = np.mean(val_losses)
     hi_val = np.array(hi_val)
     hi_val = hi_val.reshape(-1, batch_size)
-    print(f'\n Validation eval complete, \n val_loss = {val_loss} \t type = {type(val_loss)}, \n HI_val = {hi_val}, \n shape HI_val = {hi_val.shape}')
+    #print(f'\n Validation eval complete, \n val_loss = {val_loss} \t type = {type(val_loss)}, \n HI_val = {hi_val}, \n shape HI_val = {hi_val.shape}')
 
-    print(f'\n Exaluating trained VAE on training set')
+    #print(f'\n Exaluating trained VAE on training set')
     train_losses = []
     hi_train = []
     for train_batch in train_dataset:
         x_recon_train, mean_train, logvar_train, z = vae(train_batch, training=False)
-        print(f'\n Training batch HI:')
+        #print(f'\n Training batch HI:')
         train_health = compute_health_indicator(train_batch, x_recon_train, target_rows=batch_size, num_features=num_features)
-        print(f'\n HI for current batch: \n shape = {train_health.shape}')
+        train_health = tf.exp(-1.0*tf.norm(z, axis=1))
+        #print(f'\n HI for current batch: \n shape = {train_health.shape}')
         hi_train.append(train_health)
         if tf.size(train_health) > 0:  # skip empty returns if any
             train_loss_batch = vae_loss(train_batch, x_recon_train, mean_train, logvar_train, train_health,
@@ -473,15 +625,16 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
     hi_train = np.array(hi_train)
     #hi_train = np.concatenate(hi_train, axis=0)
     hi_train.reshape((-1, batch_size))
-    print(f'\n Training eval complete, \n train_loss = {train_loss} \t type = {type(train_loss)}, \n HI_train = {hi_train}, \n shape HI_train = {hi_train.shape}')
+    #print(f'\n Training eval complete, \n train_loss = {train_loss} \t type = {type(train_loss)}, \n HI_train = {hi_train}, \n shape HI_train = {hi_train.shape}')
 
-    print(f'\n Exaluating trained VAE on test set')
+    #print(f'\n Exaluating trained VAE on test set')
     test_losses = []
     hi_test = []
     for test_batch in test_dataset:
         x_recon_test, mean_test, logvar_test, z = vae(test_batch, training=False)
-        print(f'\n Test HI:')
+        #print(f'\n Test HI:')
         test_health = compute_health_indicator(test_batch, x_recon_test, target_rows=batch_size, num_features=num_features)
+        test_health = tf.exp(-1.0*tf.norm(z, axis=1))
         hi_test.append(test_health)
         if tf.size(test_health) > 0:  # skip empty returns if any
             test_loss_batch = vae_loss(test_batch, x_recon_test, mean_test, logvar_test, test_health,
@@ -490,7 +643,7 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
     test_loss = np.mean(test_losses)
     hi_test = np.array(hi_test)
     hi_test = hi_test.reshape(-1, batch_size)
-    print(f'\n Test eval complete, \n test_loss = {test_loss} \t type = {type(test_loss)}, \n HI_test = {hi_test}, \n shape HI_test = {hi_test.shape}')
+    #print(f'\n Test eval complete, \n test_loss = {test_loss} \t type = {type(test_loss)}, \n HI_test = {hi_test}, \n shape HI_test = {hi_test.shape}')
 
     losses = [train_loss, test_loss, val_loss]
 
@@ -522,18 +675,19 @@ def enhanced_callback(res):
 
 # Define space for Bayesian hyperparameter optimiation 
 space = [
-        Integer(70, 140, name='hidden_1'),
-        Real(0.001, 0.01, name='learning_rate'),
+        Integer(60, 120, name='hidden_1'),
+        Integer(31, 59, name='hidden_1'),
+        Real(0.0009, 0.004, name='learning_rate'),
         Integer(500, 1000, name='epochs'),
         Real(0.05, 0.6, name='reloss_coeff'),
-        Real(0.1, 1.0, name='klloss_coeff'),
-        Real(2.6, 4, name='moloss_coeff')
+        Real(0.1, 1.1, name='klloss_coeff'),
+        Real(0.6, 2.0, name='moloss_coeff')
     ]
 
 # Use the decorator to automatically convert parameters to keyword arguments
 @use_named_args(space) # converts positional arguments to keyword arguments
 
-def VAE_objective_old(hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff):
+def VAE_objective_old(hidden_0, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff):
     """
     Objective function for optimizing VAE hyperparameters
 
@@ -555,11 +709,11 @@ def VAE_objective_old(hidden_1, batch_size, learning_rate, epochs, reloss_coeff,
 
     # Print parameters being tested
     print(
-        f"Trying parameters: hidden_1={hidden_1}, learning_rate={learning_rate}, "
+        f"Trying parameters: hidden_0={hidden_0}, hidden_1={hidden_1}, learning_rate={learning_rate}, "
         f"epochs={epochs}, reloss_coeff={reloss_coeff}, klloss_coeff={klloss_coeff}, moloss_coeff={moloss_coeff}")
 
     # Train VAE and obtain HIs for train and test data
-    hi_train, hi_test, hi_val, vae, epoch_losses, train_test_val_losses = VAE_train(vae_train_data, vae_val_data, vae_test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2, target_rows)
+    hi_train, hi_test, hi_val, vae, epoch_losses, train_test_val_losses = VAE_train(vae_train_data, vae_val_data, vae_test_data, hidden_0, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2, target_rows)
 
     hi_all = np.vstack(hi_train, hi_test, hi_val)
     # Expand to a fake time series if needed (required by fitness function)
@@ -583,14 +737,14 @@ def VAE_objective(params, batch_size):
 
     Parameters:
         - params (list): List of hyperparameter values in the order:
-            [hidden_1, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff]
+            [hidden_0, hidden_1, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff]
 
     Returns:
         - error (float): Error from fitness function (3 / fitness)
     """
 
     # Unpack parameters
-    hidden_1, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff = params
+    hidden_0, hidden_1, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff = params
 
     # Reproducibility
     random.seed(VAE_Seed.vae_seed)
@@ -599,12 +753,12 @@ def VAE_objective(params, batch_size):
 
     # Print parameters being tested
     print(
-        f"Trying parameters: hidden_1={hidden_1}, learning_rate={learning_rate}, "
+        f"Trying parameters: hidden_0={hidden_0}, hidden_1={hidden_1}, learning_rate={learning_rate}, "
         f"epochs={epochs}, reloss_coeff={reloss_coeff}, klloss_coeff={klloss_coeff}, moloss_coeff={moloss_coeff}")
 
     # Train VAE and obtain HIs for train and test data
     hi_train, hi_test, hi_val, vae, epoch_losses, train_test_val_losses = VAE_train(
-        vae_train_data, vae_val_data, vae_test_data, 
+        vae_train_data, vae_val_data, vae_test_data, hidden_0,
         hidden_1, batch_size, learning_rate, epochs, 
         reloss_coeff, klloss_coeff, moloss_coeff, 
         num_features, hidden_2, target_rows)
@@ -664,6 +818,11 @@ def VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data,
     random.seed(VAE_Seed.vae_seed)
     tf.random.set_seed(VAE_Seed.vae_seed)
     np.random.seed(VAE_Seed.vae_seed)
+
+    for name, data in zip(["train", "val", "test"], [vae_train_data, vae_val_data, vae_test_data]):
+            if np.isnan(data).any():
+                print(f"NaNs detected in {name} data!")
+                return None
 
     # Create a partial function that includes the data, fixed variables
     objective_with_data = partial(
@@ -901,9 +1060,16 @@ def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filep
         print("VAE_hyperparameter_optimisation signature:", inspect.signature(VAE_hyperparameter_optimisation))
 
         # Optimize - Runs optimization funtion to tune hyperparameters over 'n_calls_per_sample' trials
-        best_params, best_error = VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls_per_sample, space)
+        result = VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls_per_sample, space)
         # best_params = opt_hyperparameters[0]
         # best_error = opt_hyperparameters[1]
+        # if result is None:
+        #     print("Optimization failed for this run — skipping.")
+        #     continue  # or handle as needed
+        # else:
+        #     best_params, best_error = result
+        
+        best_params, best_error = result
 
         # Stores tuple of: test_id, hyperparametes, and error in results list
         results.append((test_id, best_params, best_error)) 
@@ -955,13 +1121,13 @@ def plot_HI_graph(HI_all, dataset_name, sp_method_name, folder_output, show_plot
         plt.show()
 
 ''' TRAINS VAE USING HYPERPARAMETERS WITH LOWEST ERROR'''
-def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data, vae_val_data, vae_test_data, expected_cols, target_rows, num_features, hidden_2=10):
+def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data, vae_val_data, vae_test_data, expected_cols, target_rows, num_features, hidden_2=30):
     # Load hyperparameters
     df = pd.read_csv(opt_hyperparam_filepath)
     columns=["test_panel_id", "params", "error"]
     best_hyperparameters = ast.literal_eval(df.loc[df['error'].idxmin(), 'params'])
-    hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff = best_hyperparameters
-    hyperparameter_names = ['hidden_1','batch_size','learning_rate','epochs','reloss_coeff','klloss_coeff','moloss_coeff']
+    hidden_0, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff = best_hyperparameters
+    hyperparameter_names = ['hidden_0','hidden_1','learning_rate','epochs','reloss_coeff','klloss_coeff','moloss_coeff']
     
     # Train optimal VAE using LOOCV:
 
@@ -1018,7 +1184,7 @@ def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data,
         vae_val_data = vae_scaler.transform(vae_val_data)
 
         # Train VAE
-        hi_train, hi_test, hi_val, vae, epoch_losses, train_test_val_losses = VAE_train(vae_train_data, vae_val_data, vae_test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2, target_rows)
+        hi_train, hi_test, hi_val, vae, epoch_losses, train_test_val_losses = VAE_train(vae_train_data, vae_val_data, vae_test_data, hidden_0, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2, target_rows)
 
         # Generate HI's for trained VAE
         x_recon_val, mean_val, logvar_val, z = vae(vae_val_data, training=False)
@@ -1054,15 +1220,15 @@ train_once = True
 if __name__ == "__main__" and train_once:
     # Variables:
     target_rows=300
-    hidden_1 = 50
     batch_size = 300
-    learning_rate = 0.005
-    epochs = 550
-    hidden_2 = 10
-    reloss_coeff = 0.075
-    klloss_coeff = 1.6
-    moloss_coeff = 2.8
-
+    hidden_0 = 120
+    hidden_1 = 70
+    hidden_2 = 60
+    learning_rate = 0.001
+    epochs = 300
+    reloss_coeff=1.0
+    klloss_coeff=0.01
+    moloss_coeff=0.5
     #expected_cols = ['Amplitude_Time: Mean','Amplitude_Time: Standard Deviation','Amplitude_Time: Root Amplitude','Amplitude_Time: Root Mean Square','Amplitude_Time: Root Sum of Squares','Amplitude_Time: Peak','Amplitude_Time: Skewness','Amplitude_Time: Kurtosis','Amplitude_Time: Crest factor','Amplitude_Time: Clearance factor','Amplitude_Time: Shape factor','Amplitude_Time: Impulse factor','Amplitude_Time: Maximum to minimum difference','Amplitude_Time: FM4','Amplitude_Time: Median','Energy_Time: Mean','Energy_Time: Standard Deviation','Energy_Time: Root Amplitude','Energy_Time: Root Mean Square','Energy_Time: Root Sum of Squares','Energy_Time: Peak','Energy_Time: Skewness','Energy_Time: Kurtosis','Energy_Time: Crest factor','Energy_Time: Clearance factor','Energy_Time: Shape factor','Energy_Time: Impulse factor','Energy_Time: Maximum to minimum difference','Energy_Time: Median']
     #expected_cols_freq = ['Energy_Freq: Mean Frequency','Energy_Freq: f2','Energy_Freq: f3','Energy_Freq: f4','Energy_Freq: f5','Energy_Freq: f6','Energy_Freq: f7','Energy_Freq: f8','Energy_Freq: f9','Energy_Freq: f10','Energy_Freq: f11','Energy_Freq: f12','Energy_Freq: f13','Energy_Freq: f14','Energy_Physics: Cumulative energy']
     feature_level_data_base_path = r"C:\Users\naomi\OneDrive\Documents\Low_Features\Statistical_Features_CSV"
@@ -1072,6 +1238,7 @@ if __name__ == "__main__" and train_once:
     df_sample1 = pd.read_csv(all_paths[0])
     expected_cols = list(df_sample1.columns)
     expected_cols = expected_cols[1:]
+    expected_cols = expected_cols[::10]
     num_features = len(expected_cols)
     # Leave-one-out split
     test_path = all_paths[2]
@@ -1089,18 +1256,22 @@ if __name__ == "__main__" and train_once:
     df_test = df_test[expected_cols]
     df_val = df_val[expected_cols]
 
-    df_test_resampled = pd.DataFrame()
-    df_val_resampled = pd.DataFrame()
-    for col in df_test.columns: # interpolates test data columns so they are sampe length as target rows of train data
-        original = df_test[col].values
-        og = df_val[col].values
-        x_original = np.linspace(0, 1, len(original))
-        x_val_original = np.linspace(0,1,len(og))
-        x_target = np.linspace(0, 1, target_rows)
-        interpolated = np.interp(x_target, x_original, original)
-        interp = np.interp(x_target, x_val_original, og)
-        df_test_resampled[col] = interpolated
-        df_val_resampled[col] = interp
+    # df_test_resampled = pd.DataFrame()
+    # df_val_resampled = pd.DataFrame()
+    # for col in df_test.columns: # interpolates test data columns so they are sampe length as target rows of train data
+    #     original = df_test[col].values
+    #     og = df_val[col].values
+    #     x_original = np.linspace(0, 1, len(original))
+    #     x_val_original = np.linspace(0,1,len(og))
+    #     x_target = np.linspace(0, 1, target_rows)
+    #     interpolated = np.interp(x_target, x_original, original)
+    #     interp = np.interp(x_target, x_val_original, og)
+    #     df_test_resampled[col] = interpolated
+    #     df_val_resampled[col] = interp
+    
+    # Resample both DataFrames using function
+    df_test_resampled = resample_dataframe(df_test, target_rows)
+    df_val_resampled = resample_dataframe(df_val, target_rows)
 
     vae_test_data = df_test_resampled.values
     vae_val_data = df_val_resampled.values
@@ -1110,7 +1281,7 @@ if __name__ == "__main__" and train_once:
     vae_val_data = vae_scaler.transform(vae_val_data)
 
     # Train model
-    hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(vae_train_data, vae_val_data, vae_test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=10, target_rows=target_rows)
+    hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(vae_train_data, vae_val_data, vae_test_data, hidden_0, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=30, target_rows=target_rows)
     
     hi_train = hi_train.reshape(-1, target_rows)
 
@@ -1137,6 +1308,30 @@ if __name__ == "__main__" and train_once:
     plt.ylabel('HI')
     plt.legend()
     plt.savefig(filepath)
+    plt.show()
+
+    # Create grid of subplots
+    fig, axes = plt.subplots(3, 4, figsize=(15, 12))
+
+    # Flatten the axes array for simple iteration
+    axes = axes.flatten()
+    # Plot each row of y against x
+    for i, ax in enumerate(axes):
+        if i==0 or i==1:
+            ax.plot(x, hi_train[0].reshape(-1,1), color=colors[i], label=f'Sample {i+1}')
+        if i==2:
+            ax.plot(x, hi_test.reshape((-1,1)), color=colors[i], label='Sample 3 (test)')
+        if i>2 and i<6:
+            ax.plot(x, hi_train[i-1].reshape(-1,1), color=colors[i], label=f'Sample {i+1}') 
+        if i==6:
+            ax.plot(x, hi_val.reshape((-1,1)), color=colors[i], label='Sample 6 (val)')
+        if i>6:
+            ax.plot(x, hi_train[i-2].reshape(-1,1), color=colors[i], label=f'Sample {i+1}') 
+
+    # Add a single legend and big title for all subplots
+    fig.legend(loc='center', bbox_to_anchor=(0.5, 0.05), ncol=2)
+    fig.suptitle(f'HIs constructed by VAE')
+    plt.tight_layout()
     plt.show()
 
 '''ATTEMPTING TO IMPLEMENT OPTIMIZATION'''
@@ -1222,7 +1417,7 @@ if __name__ == "__main__" and code_og:
         test_data_scaled = scaler.transform(test_data).astype(np.float32)
 
         hi_train, hi_test = VAE_train(train_data_scaled, val_data_scaled, test_data_scaled, hidden_1, batch_size, learning_rate, 
-                                      epochs, reloss_coeff, klloss_coeff, moloss_coeff, hidden_2=10, target_rows=12000, num_features=5)
+                                      epochs, reloss_coeff, klloss_coeff, moloss_coeff, hidden_2=30, target_rows=12000, num_features=5)
 
         train_hi_min = np.mean(hi_train, axis=1, keepdims=True)
         train_hi_max = np.max(hi_train, axis=1, keepdims=True)
