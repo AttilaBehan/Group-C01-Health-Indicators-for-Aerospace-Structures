@@ -63,11 +63,12 @@ for folder in folders:
     # Normalize once (row-wise)
     scaler = Normalizer()
     X = scaler.fit_transform(X)
-
+    print('normalized')
     # Compute trendability
     trendability_score = Tr(X)
+    print('TR1')
     trendability_results[folder] = trendability_score
-
+    print('TR2')
     print(f"Folder: {os.path.basename(folder)}")
     print(f"Number of HIs processed: {X.shape[0]}")
     print(f"Trendability score: {trendability_score:.4f}")
