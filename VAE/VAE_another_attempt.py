@@ -540,7 +540,7 @@ if __name__ == "__main__" and train_once:
     time_val = time_test
 
     # Getting data filepaths
-    feature_level_data_base_path = r"C:\Users\naomi\OneDrive\Documents\Low_Features\Statistical_Features_CSV"
+    feature_level_data_base_path = r"C:\Users\job\OneDrive - Delft University of Technology\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE_AE_DATA"
     all_paths = glob.glob(feature_level_data_base_path + "/*.csv")
     n_filepaths = len(all_paths)
 

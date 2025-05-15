@@ -7,7 +7,7 @@ import scipy.interpolate as interp
 from skopt import gp_minimize
 from skopt.space import Real, Integer
 from skopt.utils import use_named_args
-from Prog_crit import fitness, test_fitness, scale_exact
+from Prognostic_criteria import fitness, test_fitness, scale_exact
 import os
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
@@ -18,12 +18,7 @@ from tqdm import tqdm
 from functools import partial
 import glob
 import inspect
-import sys
-# from pathlib import Path
-
-# # Get the parent directory of the current file's directory
-# project_root = Path(__file__).parent.parent
-# sys.path.append(str(project_root))
+import optuna
 
 # Set seed for reproducibility
 class VAE_Seed():
@@ -35,7 +30,7 @@ tf.random.set_seed(VAE_Seed.vae_seed)
 np.random.seed(VAE_Seed.vae_seed)
 
 # Training_data_folder
-train_paths_folder = r"C:\Users\job\OneDrive - Delft University of Technology\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE_AE_DATA"
+train_paths_folder = r"Dummy data"
 # Get a list of CSV file paths in the folder
 train_paths = glob.glob(train_paths_folder + "/*.csv")
 
@@ -44,18 +39,6 @@ expected_cols = list(df_sample1.columns)
 expected_cols = expected_cols[1:]
 
 target_rows = 300
-
-''' Resampling test and validation data'''
-def resample_dataframe(df, target_rows):
-    """Resample each column in a DataFrame to target number of rows."""
-    resampled_data = {}
-    for col in df.columns:
-        original = df[col].values
-        x_original = np.linspace(0, 1, len(original))
-        x_target = np.linspace(0, 1, target_rows)
-        interpolated = np.interp(x_target, x_original, original)
-        resampled_data[col] = interpolated
-    return pd.DataFrame(resampled_data)
 
 
 ''' STRUCTURE OF THE CODE:
@@ -79,7 +62,7 @@ def resample_dataframe(df, target_rows):
 # VAE merge data function and inputs for current dataset:
 target_rows = 300
 num_features=201
-hidden_2 = 10
+hidden_2 = 1
 def VAE_merge_data_per_timestep(sample_filenames, expected_cols, target_rows=300):
     """
     Purpose: Load multiple AE data files, resample each to have target_rows rows via interpolation, 
@@ -160,14 +143,10 @@ def VAE_merge_data_per_timestep_new(sample_filenames, expected_cols, target_rows
 
         df = pd.read_csv(path)
 
-        # Column cleanup
-        cols_to_drop = ['Time (Cycle)', 'Unnamed: 0', 'Time']  # Combine checks
-        df = df.drop(columns=[col for col in cols_to_drop if col in df.columns])
-
-        # if 'Time' in df.columns:
-        #     df = df.drop(columns=['Time (Cycle)'])
-        # if 'Unnamed: 0' in df.columns:
-        #     df = df.drop(columns=['Unnamed: 0'])
+        if 'Time' in df.columns:
+            df = df.drop(columns=['Time (Cycle)'])
+        if 'Unnamed: 0' in df.columns:
+            df = df.drop(columns=['Unnamed: 0'])
 
         missing = [col for col in expected_cols if col not in df.columns]
         if missing:
@@ -175,15 +154,13 @@ def VAE_merge_data_per_timestep_new(sample_filenames, expected_cols, target_rows
         df = df[expected_cols]
 
         # Resample each feature independently
-        df_resampled = resample_dataframe(df, target_rows)
-
-        # df_resampled = pd.DataFrame()
-        # for col in df.columns:
-        #     original = df[col].values
-        #     x_original = np.linspace(0, 1, len(original))
-        #     x_target = np.linspace(0, 1, target_rows)
-        #     interpolated = np.interp(x_target, x_original, original)
-        #     df_resampled[col] = interpolated
+        df_resampled = pd.DataFrame()
+        for col in df.columns:
+            original = df[col].values
+            x_original = np.linspace(0, 1, len(original))
+            x_target = np.linspace(0, 1, target_rows)
+            interpolated = np.interp(x_target, x_original, original)
+            df_resampled[col] = interpolated
 
         all_data.append(df_resampled)
 
@@ -215,7 +192,7 @@ def resample_dataframe(df, target_rows):
 # Defines Keras VAE model
 class VAE(tf.keras.Model):
     # Contructor method which initializes VAE, hidden_2 = size of latent space, usually smaller than hidden_1
-    def __init__(self, input_dim, hidden_1, hidden_2=10):
+    def __init__(self, input_dim, hidden_1, hidden_2=1):
         # Calls parent class constructor to initialize model properly
         super(VAE, self).__init__()
 
@@ -270,24 +247,58 @@ class VAE(tf.keras.Model):
 ''' HI calculator based on reconstruction errors, 
 
     per timestep health scores: detect degradation at specific times, allows to check for monotonicity (penalize health decreases over time in VAE_loss)'''
-def compute_health_indicator(x, x_recon, k=1.0, target_rows=300, num_features=201):
-    ''' x, x_recon should have same shape and be 2D tensors
-        k = sensitivity parameter (larger values penalize errors more)'''
-    #print(f'x shape: {x.shape}')
-    if x.shape[0]==target_rows:
-        x_reshaped = tf.convert_to_tensor(x, dtype=tf.float64)
-        x_recon_reshaped = tf.convert_to_tensor(x_recon, dtype=tf.float32)
-        # Make sure two x tensors have same float type:
-        x_reshaped = tf.cast(x_reshaped, tf.float32)
-        errors = tf.reduce_mean(tf.square(x_reshaped - x_recon_reshaped), axis=1) # Square of differences x and x_recon, then averages errors across features (axis=2), output shape = num samples, num timesteps (error per timestep per sample)
-        health = tf.exp(-k * errors)  # Shape (1, target_rows)
+import tensorflow as tf
+
+def compute_health_indicator(batch_xs, x_recon, target_rows=300, num_features=201):
+    """
+    Compute the Health Indicator (HI) based on the input data's deviation from the initial state.
+    
+    Parameters:
+        - batch_xs (tf.Tensor): Input data, shape (batch_size * target_rows, num_features) or (target_rows, num_features)
+        - x_recon (tf.Tensor): Reconstructed data, shape same as batch_xs
+        - target_rows (int): Number of time steps per sample (default: 300)
+        - num_features (int): Number of features (default: 201)
+    
+    Returns:
+        - health (tf.Tensor): Health Indicat    or, shape (batch_size, target_rows) or (target_rows,)
+    """
+    # Ensure input is in float32
+    x_reshaped = tf.cast(batch_xs, tf.float32)
+    
+    if x_reshaped.shape[0] == target_rows:
+        # Single sample: shape = (target_rows, num_features)
+        # Use the first time step as the healthy reference
+        reference = x_reshaped[0:1, :]  # Shape: (1, num_features)
+        # Compute deviation from reference (absolute difference)
+        deviations = tf.reduce_mean(tf.abs(x_reshaped - reference), axis=1)  # Shape: (target_rows,)
+        # Normalize deviations to [0, 1]
+        max_deviation = tf.reduce_max(deviations)
+        min_deviation = tf.reduce_min(deviations)
+        normalized_deviations = tf.where(
+            tf.equal(max_deviation, min_deviation),
+            tf.zeros_like(deviations),
+            (deviations - min_deviation) / (max_deviation - min_deviation)
+        )
+        # Map to health: higher deviation = lower health
+        health = 1.0 - normalized_deviations  # Shape: (target_rows,)
     else:
-        x_reshaped = tf.reshape(x, (-1, target_rows, num_features))  # Reshape to 3D tensor and separate features again
-        x_recon_reshaped = tf.reshape(x_recon, (-1, target_rows, num_features))
-        # Make sure two x tensors have same float type:
-        x_reshaped = tf.cast(x_reshaped, tf.float32)
-        errors = tf.reduce_mean(tf.square(x_reshaped - x_recon_reshaped), axis=2) # Square of differences x and x_recon, then averages errors across features (axis=2), output shape = num samples, num timesteps (error per timestep per sample)
-        health = tf.exp(-k * errors)  # Shape (n_samples, target_rows)
+        # Multiple samples: shape = (batch_size * target_rows, num_features)
+        x_reshaped = tf.reshape(x_reshaped, (-1, target_rows, num_features))
+        # Use the first time step as the healthy reference for each sample
+        reference = x_reshaped[:, 0:1, :]  # Shape: (batch_size, 1, num_features)
+        # Compute deviation from reference
+        deviations = tf.reduce_mean(tf.abs(x_reshaped - reference), axis=2)  # Shape: (batch_size, target_rows)
+        # Normalize deviations per sample
+        max_deviation = tf.reduce_max(deviations, axis=1, keepdims=True)
+        min_deviation = tf.reduce_min(deviations, axis=1, keepdims=True)
+        normalized_deviations = tf.where(
+            tf.equal(max_deviation, min_deviation),
+            tf.zeros_like(deviations),
+            (deviations - min_deviation) / (max_deviation - min_deviation)
+        )
+        # Map to health
+        health = 1.0 - normalized_deviations  # Shape: (batch_size, target_rows)
+    
     return health
 
 ''' Computes total loss - combines Reconstruction, KL Divergence and Monotonicity losses'''
@@ -295,24 +306,22 @@ def vae_loss(x, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, molos
     # Make x and x_recon same float type
     x = tf.cast(x, tf.float32)
     if x.shape[1]>0:
-        reloss = tf.reduce_sum(tf.square(x_recon - x), axis=1) # Sums squared errors across features for each sample in batch, output shape = (bathc_size,)
+        reloss = tf.reduce_sum(tf.square(x_recon - x), axis=0) # Sums squared errors across features for each sample in batch, output shape = (bathc_size,)
         # Term inside reduce_sum is KL divergence between N(mu, var) and N(0,1), axis=1 sums KL terms across latent dimensions for each sample, output shape = (batch_size,)
-        klloss = -0.5 * tf.reduce_sum(1 + logvar - tf.square(mean) - tf.exp(logvar+1e-8), axis=1) # Regularizes the latent space to follow a standard normal distribution N(0, I).
+        klloss = -0.5 * tf.reduce_sum(1 + logvar - tf.square(mean) - tf.exp(logvar), axis=0) # Regularizes the latent space to follow a standard normal distribution N(0, I).
         # Computes health change in time: health[t]-health[t-1] (output shape = (batch_size, timesteps-1))
         diffs = health[1:] - health[:-1]
         # tf.nn.relu(-diffs) returns non-zero value of change if health decreases
-        fealoss = tf.reduce_sum(tf.nn.relu(-diffs)) # sums all penalties across batches and timesteps
-        #print(f'reloss: {reloss.shape} \n klloss: {klloss.shape} \n fealoss: {fealoss}')
+        fealoss = tf.reduce_sum(tf.nn.relu(-diffs + 0.05)) # sums all penalties across batches and timesteps
         loss = tf.reduce_mean(reloss_coeff * reloss + klloss_coeff * klloss + moloss_coeff * fealoss) # weighted sum of losses, averaged over the batch
     else:
         reloss = tf.reduce_sum(tf.square(x_recon - x), axis=1) # Sums squared errors across features for each sample in batch, output shape = (bathc_size,)
         # Term inside reduce_sum is KL divergence between N(mu, var) and N(0,1), axis=1 sums KL terms across latent dimensions for each sample, output shape = (batch_size,)
-        klloss = -0.5 * tf.reduce_sum(1 + logvar - tf.square(mean) - tf.exp(logvar+1e-8), axis=1) # Regularizes the latent space to follow a standard normal distribution N(0, I).
+        klloss = -0.5 * tf.reduce_sum(1 + logvar - tf.square(mean) - tf.exp(logvar), axis=1) # Regularizes the latent space to follow a standard normal distribution N(0, I).
         # Computes health change in time: health[t]-health[t-1] (output shape = (batch_size, timesteps-1))
         diffs = health[:, 1:] - health[:, :-1]
         # tf.nn.relu(-diffs) returns non-zero value of change if health decreases
-        fealoss = tf.reduce_sum(tf.nn.relu(-diffs)) # sums all penalties across batches and timesteps
-        print(f'reloss: {reloss.shape} \n klloss: {klloss.shape} \n fealoss: {fealoss}')
+        fealoss = tf.reduce_sum(tf.nn.relu(-diffs + 0.05)) # sums all penalties across batches and timesteps
         loss = tf.reduce_mean(reloss_coeff * reloss + klloss_coeff * klloss + moloss_coeff * fealoss) # weighted sum of losses, averaged over the batch
     return loss
 
@@ -346,7 +355,7 @@ def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coef
     return loss
 
 ''' Apply the train_step() function to train the VAE'''
-def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=10, target_rows=300, patience=50, min_delta=1e-4):
+def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=1, target_rows=300, patience=50, min_delta=1e-4):
     """
         Trains VAE on sample_data with inbuilt early stopping when validation diverges, then evaluates VAE on test_data
     
@@ -360,8 +369,6 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
         Returns: 
         - loss: for monitoring/plotting
     """
-
-    klloss_coeff = klloss_coeff/hidden_2
     # Reproducability
     random.seed(VAE_Seed.vae_seed)
     tf.random.set_seed(VAE_Seed.vae_seed)
@@ -542,11 +549,11 @@ def enhanced_callback(res):
 
 # Define space for Bayesian hyperparameter optimiation 
 space = [
-        Integer(70, 140, name='hidden_1'),
+        Integer(40, 120, name='hidden_1'),
         Real(0.001, 0.01, name='learning_rate'),
         Integer(500, 1000, name='epochs'),
         Real(0.05, 0.6, name='reloss_coeff'),
-        Real(0.1, 1.0, name='klloss_coeff'),
+        Real(1.4, 1.8, name='klloss_coeff'),
         Real(2.6, 4, name='moloss_coeff')
     ]
 
@@ -843,6 +850,48 @@ def VAE_save_results(fitness_all, fitness_test, panel, freq, SP_Method_file_type
     # Save the dataframe to a fitness-all CSV
     df.to_csv(filename_all)
 
+def optimize_hyperparameters_optuna(
+    vae_train_data, vae_val_data, vae_test_data,
+    n_trials=40,
+    direction='minimize'
+):
+    """
+    Optimize VAE hyperparameters using Optuna's TPE sampler and pruning.
+    Returns best_params dict and best_value.
+    """
+    def objective(trial):
+        # Suggest hyperparameters
+        hidden_1     = trial.suggest_int('hidden_1',     40, 120)
+        learning_rate= trial.suggest_loguniform('learning_rate', 1e-3, 1e-2)
+        epochs       = trial.suggest_int('epochs',       500, 1000)
+        reloss_coeff = trial.suggest_uniform('reloss_coeff', 0.05, 0.6)
+        klloss_coeff = trial.suggest_uniform('klloss_coeff', 1.4, 1.8)
+        moloss_coeff = trial.suggest_uniform('moloss_coeff', 2.6, 4.0)
+
+        # Train VAE with these params
+        hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(
+            vae_train_data, vae_val_data, vae_test_data,
+            hidden_1, batch_size, learning_rate, epochs,
+            reloss_coeff, klloss_coeff, moloss_coeff,
+            num_features=num_features, hidden_2=hidden_2,
+            target_rows=target_rows
+        )
+
+        # Compute fitness error on stacked health indicators
+        hi_all = np.vstack((hi_train, hi_test, hi_val))
+        _, _, _, _, error = fitness(hi_all)
+        trial.report(error, step=0)
+        return error
+
+    # Create study with TPE sampler and median pruner
+    sampler = optuna.samplers.TPESampler(seed=VAE_Seed.vae_seed)
+    pruner  = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=1)
+    study   = optuna.create_study(direction=direction, sampler=sampler, pruner=pruner)
+    study.optimize(objective, n_trials=n_trials, timeout=None)
+
+    print("Best trial:", study.best_trial.params)
+    return study.best_trial.params, study.best_value
+
 ''' Uses VAE_hyperparameter_optimization() in loop using LOOCV'''
 
 def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filepaths, n_calls_per_sample=40, target_rows=300):
@@ -884,7 +933,6 @@ def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filep
 
         # Load and flatten (merge) training data csv files, resampling to 12000 rows
         vae_train_data, vae_scaler = VAE_merge_data_per_timestep_new(train_paths, expected_cols, target_rows)
-
         # Load expected colums of test data excluding time
         df_test = pd.read_csv(test_path).drop(columns=['Time (Cycle)'])
         df_val = pd.read_csv(val_path).drop(columns='Time (Cycle)')
@@ -918,10 +966,10 @@ def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filep
         vae_val_data = vae_scaler.transform(vae_val_data)
 
         print("Space definition right before optimization call:", space)
-        print("VAE_hyperparameter_optimisation signature:", inspect.signature(VAE_hyperparameter_optimisation))
+        print("VAE_hyperparameter_optimisation signature:", inspect.signature(optimize_hyperparameters_optuna))
 
         # Optimize - Runs optimization funtion to tune hyperparameters over 'n_calls_per_sample' trials
-        best_params, best_error = VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls_per_sample, space)
+        best_params, best_error = optimize_hyperparameters_optuna(vae_train_data, vae_val_data, vae_test_data, n_trials=40)
         # best_params = opt_hyperparameters[0]
         # best_error = opt_hyperparameters[1]
 
@@ -975,7 +1023,7 @@ def plot_HI_graph(HI_all, dataset_name, sp_method_name, folder_output, show_plot
         plt.show()
 
 ''' TRAINS VAE USING HYPERPARAMETERS WITH LOWEST ERROR'''
-def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data, vae_val_data, vae_test_data, expected_cols, target_rows, num_features, hidden_2=10):
+def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data, vae_val_data, vae_test_data, expected_cols, target_rows, num_features, hidden_2=1):
     # Load hyperparameters
     df = pd.read_csv(opt_hyperparam_filepath)
     columns=["test_panel_id", "params", "error"]
@@ -1017,20 +1065,17 @@ def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data,
         df_test = df_test[expected_cols]
         df_val = df_val[expected_cols]
 
-        # df_test_resampled = pd.DataFrame()
-        # df_val_resampled = pd.DataFrame()
-        # for col in df_test.columns: # interpolates test data columns so they are sampe length as target rows of train data
-        #     original = df_test[col].values
-        #     og = df_val[col].values
-        #     x_original = np.linspace(0, 1, len(original))
-        #     x_target = np.linspace(0, 1, target_rows)
-        #     interpolated = np.interp(x_target, x_original, original)
-        #     interp = np.interp(x_target, x_original, og)
-        #     df_test_resampled[col] = interpolated
-        #     df_val_resampled[col] = interp
-        
-        df_test_resampled = resample_dataframe(df_test, target_rows)
-        df_val_resampled = resample_dataframe(df_val, target_rows)
+        df_test_resampled = pd.DataFrame()
+        df_val_resampled = pd.DataFrame()
+        for col in df_test.columns: # interpolates test data columns so they are sampe length as target rows of train data
+            original = df_test[col].values
+            og = df_val[col].values
+            x_original = np.linspace(0, 1, len(original))
+            x_target = np.linspace(0, 1, target_rows)
+            interpolated = np.interp(x_target, x_original, original)
+            interp = np.interp(x_target, x_original, og)
+            df_test_resampled[col] = interpolated
+            df_val_resampled[col] = interp
 
         # If using old MERGE_DATA - Row major order flattening into 1D array (Row1, Row2, Row3... successive), then reshapes to go from one row to one column
         vae_test_data = df_test_resampled.values()
@@ -1081,14 +1126,13 @@ if __name__ == "__main__" and train_once:
     batch_size = 300
     learning_rate = 0.005
     epochs = 550
-    hidden_2 = 10
     reloss_coeff = 0.075
-    klloss_coeff = 1.6
-    moloss_coeff = 2.8
+    klloss_coeff = 0.5
+    moloss_coeff = 2
 
     #expected_cols = ['Amplitude_Time: Mean','Amplitude_Time: Standard Deviation','Amplitude_Time: Root Amplitude','Amplitude_Time: Root Mean Square','Amplitude_Time: Root Sum of Squares','Amplitude_Time: Peak','Amplitude_Time: Skewness','Amplitude_Time: Kurtosis','Amplitude_Time: Crest factor','Amplitude_Time: Clearance factor','Amplitude_Time: Shape factor','Amplitude_Time: Impulse factor','Amplitude_Time: Maximum to minimum difference','Amplitude_Time: FM4','Amplitude_Time: Median','Energy_Time: Mean','Energy_Time: Standard Deviation','Energy_Time: Root Amplitude','Energy_Time: Root Mean Square','Energy_Time: Root Sum of Squares','Energy_Time: Peak','Energy_Time: Skewness','Energy_Time: Kurtosis','Energy_Time: Crest factor','Energy_Time: Clearance factor','Energy_Time: Shape factor','Energy_Time: Impulse factor','Energy_Time: Maximum to minimum difference','Energy_Time: Median']
     #expected_cols_freq = ['Energy_Freq: Mean Frequency','Energy_Freq: f2','Energy_Freq: f3','Energy_Freq: f4','Energy_Freq: f5','Energy_Freq: f6','Energy_Freq: f7','Energy_Freq: f8','Energy_Freq: f9','Energy_Freq: f10','Energy_Freq: f11','Energy_Freq: f12','Energy_Freq: f13','Energy_Freq: f14','Energy_Physics: Cumulative energy']
-    feature_level_data_base_path = r"C:\Users\job\OneDrive - Delft University of Technology\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE_AE_DATA"
+    feature_level_data_base_path = r"Dummy data"
     all_paths = glob.glob(feature_level_data_base_path + "/*.csv")
     n_filepaths = len(all_paths)
 
@@ -1112,21 +1156,18 @@ if __name__ == "__main__" and train_once:
     df_test = df_test[expected_cols]
     df_val = df_val[expected_cols]
 
-    # df_test_resampled = pd.DataFrame()
-    # df_val_resampled = pd.DataFrame()
-    # for col in df_test.columns: # interpolates test data columns so they are sampe length as target rows of train data
-    #     original = df_test[col].values
-    #     og = df_val[col].values
-    #     x_original = np.linspace(0, 1, len(original))
-    #     x_val_original = np.linspace(0,1,len(og))
-    #     x_target = np.linspace(0, 1, target_rows)
-    #     interpolated = np.interp(x_target, x_original, original)
-    #     interp = np.interp(x_target, x_val_original, og)
-    #     df_test_resampled[col] = interpolated
-    #     df_val_resampled[col] = interp
-
-    df_test_resampled = resample_dataframe(df_test, target_rows)
-    df_val_resampled = resample_dataframe(df_val, target_rows)
+    df_test_resampled = pd.DataFrame()
+    df_val_resampled = pd.DataFrame()
+    for col in df_test.columns: # interpolates test data columns so they are sampe length as target rows of train data
+        original = df_test[col].values
+        og = df_val[col].values
+        x_original = np.linspace(0, 1, len(original))
+        x_val_original = np.linspace(0,1,len(og))
+        x_target = np.linspace(0, 1, target_rows)
+        interpolated = np.interp(x_target, x_original, original)
+        interp = np.interp(x_target, x_val_original, og)
+        df_test_resampled[col] = interpolated
+        df_val_resampled[col] = interp
 
     vae_test_data = df_test_resampled.values
     vae_val_data = df_val_resampled.values
@@ -1136,7 +1177,7 @@ if __name__ == "__main__" and train_once:
     vae_val_data = vae_scaler.transform(vae_val_data)
 
     # Train model
-    hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(vae_train_data, vae_val_data, vae_test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=10, target_rows=target_rows)
+    hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(vae_train_data, vae_val_data, vae_test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=1, target_rows=target_rows)
     
     hi_train = hi_train.reshape(-1, target_rows)
 
@@ -1147,9 +1188,11 @@ if __name__ == "__main__" and train_once:
     # print(f'\n HI_val shape: {hi_val.shape}, \n HI_val: {hi_val}')
 
     # Plot HI graph
-    filepath = r"C:\Users\job\Downloads\Test_HI_graph.png"
+    filepath = r"C:\Users\AJEBr\OneDrive\Documents\Aerospace\BsC year 2\VAE_Project\Dummy data\Test_HI_graph.png"
     colors = ['b', 'r', 'g', 'c', 'm', 'y', 'orange', 'purple', 'brown', 'pink', 'gray', 'lime', 'violet', 'yellow']
     x = np.linspace(0,100,target_rows)
+    print(x)
+    print(hi_train[0].reshape(-1,1))
     plt.plot(x, hi_train[0].reshape(-1,1), color='r', label='Sample 1')
     plt.plot(x, hi_train[1].reshape(-1,1), color='lime', label='Sample 2')
     plt.plot(x, hi_test.reshape((-1,1)), color='b', label='Sample 3 ')
@@ -1166,14 +1209,14 @@ if __name__ == "__main__" and train_once:
     plt.show()
 
 '''ATTEMPTING TO IMPLEMENT OPTIMIZATION'''
-optimizing = False
+optimizing = True
 if __name__ == "__main__" and optimizing:
-    folder_store_hyperparameters = r"C:\Users\job\Downloads\Low_Features"
+    folder_store_hyperparameters = r"Dummy data"
 
     target_rows = 300
     batch_size = 300
     n_calls_per_sample = 12
-    feature_level_data_base_path = r"C:\Users\job\OneDrive - Delft University of Technology\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE_AE_DATA"
+    feature_level_data_base_path = r"Dummy data"
     all_paths = glob.glob(feature_level_data_base_path + "/*.csv")
     n_filepaths = len(all_paths)
 
@@ -1202,7 +1245,7 @@ if __name__ == "__main__" and optimizing:
 ''' CHECK THIS OUT LATER'''
 code_og = False
 if __name__ == "__main__" and code_og:
-    base_path = "C:/Users/AJEBr/OneDrive/Documents/Aerospace/BsC year 2/VAE_Project/VAE_AE_DATA"
+    base_path = "C:/Users/AJEBr/OneDrive/Documents/Aerospace/BsC year 2/VAE_Project/Dummy data"
     sample_ids = [f"Sample{i}Interp.csv" for i in range(1, 13)]
     sample_paths = [os.path.join(base_path, sid) for sid in sample_ids]
 
@@ -1248,7 +1291,7 @@ if __name__ == "__main__" and code_og:
         test_data_scaled = scaler.transform(test_data).astype(np.float32)
 
         hi_train, hi_test = VAE_train(train_data_scaled, val_data_scaled, test_data_scaled, hidden_1, batch_size, learning_rate, 
-                                      epochs, reloss_coeff, klloss_coeff, moloss_coeff, hidden_2=10, target_rows=12000, num_features=5)
+                                      epochs, reloss_coeff, klloss_coeff, moloss_coeff, hidden_2=1, target_rows=12000, num_features=5)
 
         train_hi_min = np.mean(hi_train, axis=1, keepdims=True)
         train_hi_max = np.max(hi_train, axis=1, keepdims=True)
