@@ -35,7 +35,7 @@ folders = [
 trendability_results = {}
 
 # Target resample length
-target_length = 500
+target_length = 100
 
 for folder in folders:
     file_paths = glob.glob(os.path.join(folder, "*.csv"))
