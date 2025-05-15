@@ -272,7 +272,7 @@ class VAE(tf.keras.Model):
 ''' HI calculator based on reconstruction errors, 
 
     per timestep health scores: detect degradation at specific times, allows to check for monotonicity (penalize health decreases over time in VAE_loss)'''
-def compute_health_indicator(x, x_recon, k=0.05, target_rows=300, num_features=201):
+def compute_health_indicator(x, x_recon, k=1.0, target_rows=300, num_features=201):
     ''' x, x_recon should have same shape and be 2D tensors
         k = sensitivity parameter (larger values penalize errors more)'''
     #print(f'x shape: {x.shape}')
@@ -388,6 +388,30 @@ def compute_health_indicator_huber(x, x_recon, k=1.0, delta=1.0, target_rows=300
 
     return health
 
+def trendability_loss(health, timesteps):
+    """Encourage negative correlation with time"""
+    # Compute correlation between health and timesteps
+    timesteps = tf.cast(timesteps, dtype=health.dtype)
+    health_flat = tf.reshape(health, [-1])
+    timesteps_flat = tf.reshape(timesteps, [-1])
+    # Compute means
+    mean_h = tf.reduce_mean(health_flat)
+    mean_t = tf.reduce_mean(timesteps_flat)
+    
+    # Compute covariance
+    cov = tf.reduce_mean((health - mean_h) * (timesteps - mean_t))
+    
+    # Compute standard deviations
+    std_h = tf.sqrt(tf.reduce_mean(tf.square(health - mean_h)))
+    std_t = tf.sqrt(tf.reduce_mean(tf.square(timesteps - mean_t)))
+    
+    # Compute correlation
+    correlation = cov / (std_h * std_t + 1e-9)  # Small epsilon to avoid division by zero
+    
+    # Clip to handle any numerical instability
+    correlation = tf.clip_by_value(correlation, -1.0, 1.0)
+    return tf.square(correlation + 1)
+
 ''' Computes total loss - combines Reconstruction, KL Divergence and Monotonicity losses'''
 def vae_loss(x, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff):
     # Make x and x_recon same float type
@@ -412,6 +436,31 @@ def vae_loss(x, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, molos
         loss = tf.reduce_mean(reloss_coeff * reloss + klloss_coeff * klloss + moloss_coeff * fealoss) # weighted sum of losses, averaged over the batch
     return loss
 
+def vae_loss_with_trendability(x, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff, timesteps, tr_loss_coeff):
+    # Make x and x_recon same float type
+    x = tf.cast(x, tf.float32)
+    if x.shape[1]>0:
+        reloss = tf.reduce_sum(tf.square(x_recon - x), axis=1) # Sums squared errors across features for each sample in batch, output shape = (bathc_size,)
+        # Term inside reduce_sum is KL divergence between N(mu, var) and N(0,1), axis=1 sums KL terms across latent dimensions for each sample, output shape = (batch_size,)
+        klloss = -0.5 * tf.reduce_sum(1 + logvar - tf.square(mean) - tf.exp(logvar+1e-8), axis=1) # Regularizes the latent space to follow a standard normal distribution N(0, I).
+        # Computes health change in time: health[t]-health[t-1] (output shape = (batch_size, timesteps-1))
+        diffs = health[1:] - health[:-1]
+        # tf.nn.relu(-diffs) returns non-zero value of change if health decreases
+        fealoss = tf.reduce_sum(tf.nn.relu(-diffs)) # sums all penalties across batches and timesteps
+        tr_loss = trendability_loss(health, timesteps)
+        loss = tf.reduce_mean(reloss_coeff * reloss + klloss_coeff * klloss + moloss_coeff * fealoss + tr_loss * tr_loss_coeff) # weighted sum of losses, averaged over the batch
+    else:
+        reloss = tf.reduce_sum(tf.square(x_recon - x), axis=1) # Sums squared errors across features for each sample in batch, output shape = (bathc_size,)
+        # Term inside reduce_sum is KL divergence between N(mu, var) and N(0,1), axis=1 sums KL terms across latent dimensions for each sample, output shape = (batch_size,)
+        klloss = -0.5 * tf.reduce_sum(1 + logvar - tf.square(mean) - tf.exp(logvar+1e-8), axis=1) # Regularizes the latent space to follow a standard normal distribution N(0, I).
+        # Computes health change in time: health[t]-health[t-1] (output shape = (batch_size, timesteps-1))
+        diffs = health[:, 1:] - health[:, :-1]
+        # tf.nn.relu(-diffs) returns non-zero value of change if health decreases
+        fealoss = tf.reduce_sum(tf.nn.relu(-diffs)) # sums all penalties across batches and timesteps
+        tr_loss = trendability_loss(health, timesteps)
+        loss = tf.reduce_mean(reloss_coeff * reloss + klloss_coeff * klloss + moloss_coeff * fealoss + tr_loss * tr_loss_coeff) # weighted sum of losses, averaged over the batch
+    return loss
+
 #@tf.function  # Decotator, Converts the Python function into a TensorFlow graph for faster execution
 
 def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coeff):
@@ -433,9 +482,11 @@ def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coef
         x_recon, mean, logvar, z = vae(batch_xs, training=True) # Training = true makes sure dropout layers are on
         # Computes HI from prev defined function
         health = compute_health_indicator(batch_xs, x_recon, target_rows=target_rows, num_features=num_features) # output size = (batch_size, timesteps)
-        health = tf.exp(-1.0*tf.norm(z, axis=1))
+        #health = tf.exp(-1.0*tf.norm(z, axis=1))
         # Computes loss from prev defined function (output = scalar loss value, averaged over batch)
         loss = vae_loss(batch_xs, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
+        #timestamps = np.linspace(0, 1, batch_xs.shape[0])
+        #loss = vae_loss_with_trendability(batch_xs, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff, timestamps, tr_loss_coeff=3.0)
 
         klloss = -0.5 * tf.reduce_mean(1 + logvar - tf.square(mean) - tf.exp(logvar+1e-8), axis=1)
         batch_xs = tf.cast(batch_xs, tf.float32)  # Add this line
@@ -540,8 +591,10 @@ def VAE_train(sample_data, val_data, test_data, hidden_0, hidden_1, batch_size, 
         #print(f'Starting validation step for epoch {epoch}')
         x_recon_val, mean_val, logvar_val, z = vae(val_data, training=False)
         val_health = compute_health_indicator(val_data, x_recon_val, target_rows=target_rows, num_features=num_features)
-        val_health = tf.exp(-1.0*tf.norm(z, axis=1))
+        #val_health = tf.exp(-1.0*tf.norm(z, axis=1))
         val_loss = vae_loss(val_data, x_recon_val, mean_val, logvar_val, val_health, reloss_coeff, klloss_coeff, moloss_coeff)
+        #timestamps = tf.convert_to_tensor(np.linspace(0,1,val_data.shape[0]))
+        #val_loss = vae_loss_with_trendability(val_data, x_recon_val, mean_val, logvar_val, val_health, reloss_coeff, klloss_coeff, moloss_coeff, timestamps, tr_loss_coeff=3.0)
 
 
         # val_losses = []
@@ -596,11 +649,13 @@ def VAE_train(sample_data, val_data, test_data, hidden_0, hidden_1, batch_size, 
         val_hi = tf.norm(z, axis=1)
         #print(f'\n Validation HI:')
         val_health = compute_health_indicator(val_batch, x_recon_val, target_rows=batch_size, num_features=num_features).numpy()
-        val_health = tf.exp(-1.0*tf.norm(z, axis=1))
+        #val_health = tf.exp(-1.0*tf.norm(z, axis=1))
         hi_val.append(val_health)
         if tf.size(val_health) > 0:  # skip empty returns if any
             val_loss_batch = vae_loss(val_batch, x_recon_val, mean_val, logvar_val, val_health,
                                         reloss_coeff, klloss_coeff, moloss_coeff)
+            #timestamps = tf.convert_to_tensor(np.linspace(0,1,val_batch.shape[0]))
+            #val_loss_batch = vae_loss_with_trendability(val_batch, x_recon_val, mean_val, logvar_val, val_health,reloss_coeff, klloss_coeff, moloss_coeff, timestamps, tr_loss_coeff=3.0)
             val_losses.append(val_loss_batch.numpy())
     val_loss = np.mean(val_losses)
     hi_val = np.array(hi_val)
@@ -614,12 +669,14 @@ def VAE_train(sample_data, val_data, test_data, hidden_0, hidden_1, batch_size, 
         x_recon_train, mean_train, logvar_train, z = vae(train_batch, training=False)
         #print(f'\n Training batch HI:')
         train_health = compute_health_indicator(train_batch, x_recon_train, target_rows=batch_size, num_features=num_features)
-        train_health = tf.exp(-1.0*tf.norm(z, axis=1))
+        #train_health = tf.exp(-1.0*tf.norm(z, axis=1))
         #print(f'\n HI for current batch: \n shape = {train_health.shape}')
         hi_train.append(train_health)
         if tf.size(train_health) > 0:  # skip empty returns if any
             train_loss_batch = vae_loss(train_batch, x_recon_train, mean_train, logvar_train, train_health,
                                         reloss_coeff, klloss_coeff, moloss_coeff)
+            #timestamps = tf.convert_to_tensor(np.linspace(0,1,train_batch.shape[0]))
+            #val_loss_batch = vae_loss_with_trendability(train_batch, x_recon_train, mean_train, logvar_train, train_health,reloss_coeff, klloss_coeff, moloss_coeff, timestamps, tr_loss_coeff=3.0)
             train_losses.append(train_loss_batch.numpy())
     train_loss = np.mean(train_losses)
     hi_train = np.array(hi_train)
@@ -634,11 +691,13 @@ def VAE_train(sample_data, val_data, test_data, hidden_0, hidden_1, batch_size, 
         x_recon_test, mean_test, logvar_test, z = vae(test_batch, training=False)
         #print(f'\n Test HI:')
         test_health = compute_health_indicator(test_batch, x_recon_test, target_rows=batch_size, num_features=num_features)
-        test_health = tf.exp(-1.0*tf.norm(z, axis=1))
+        #test_health = tf.exp(-1.0*tf.norm(z, axis=1))
         hi_test.append(test_health)
         if tf.size(test_health) > 0:  # skip empty returns if any
             test_loss_batch = vae_loss(test_batch, x_recon_test, mean_test, logvar_test, test_health,
                                         reloss_coeff, klloss_coeff, moloss_coeff)
+            #timestamps = tf.convert_to_tensor(np.linspace(0,1,test_batch.shape[0]))
+            #val_loss_batch = vae_loss_with_trendability(test_batch, x_recon_train, mean_train, logvar_train, train_health,reloss_coeff, klloss_coeff, moloss_coeff, timestamps, tr_loss_coeff=3.0)
             test_losses.append(test_loss_batch.numpy())
     test_loss = np.mean(test_losses)
     hi_test = np.array(hi_test)
@@ -1229,9 +1288,10 @@ if __name__ == "__main__" and train_once:
     reloss_coeff=1.0
     klloss_coeff=0.01
     moloss_coeff=0.5
+
     #expected_cols = ['Amplitude_Time: Mean','Amplitude_Time: Standard Deviation','Amplitude_Time: Root Amplitude','Amplitude_Time: Root Mean Square','Amplitude_Time: Root Sum of Squares','Amplitude_Time: Peak','Amplitude_Time: Skewness','Amplitude_Time: Kurtosis','Amplitude_Time: Crest factor','Amplitude_Time: Clearance factor','Amplitude_Time: Shape factor','Amplitude_Time: Impulse factor','Amplitude_Time: Maximum to minimum difference','Amplitude_Time: FM4','Amplitude_Time: Median','Energy_Time: Mean','Energy_Time: Standard Deviation','Energy_Time: Root Amplitude','Energy_Time: Root Mean Square','Energy_Time: Root Sum of Squares','Energy_Time: Peak','Energy_Time: Skewness','Energy_Time: Kurtosis','Energy_Time: Crest factor','Energy_Time: Clearance factor','Energy_Time: Shape factor','Energy_Time: Impulse factor','Energy_Time: Maximum to minimum difference','Energy_Time: Median']
     #expected_cols_freq = ['Energy_Freq: Mean Frequency','Energy_Freq: f2','Energy_Freq: f3','Energy_Freq: f4','Energy_Freq: f5','Energy_Freq: f6','Energy_Freq: f7','Energy_Freq: f8','Energy_Freq: f9','Energy_Freq: f10','Energy_Freq: f11','Energy_Freq: f12','Energy_Freq: f13','Energy_Freq: f14','Energy_Physics: Cumulative energy']
-    feature_level_data_base_path = r"C:\Users\naomi\OneDrive\Documents\Low_Features\Statistical_Features_CSV"
+    feature_level_data_base_path = r"c:\Users\naomi\OneDrive\Documents\Time_Domain_High_Features"
     all_paths = glob.glob(feature_level_data_base_path + "/*.csv")
     n_filepaths = len(all_paths)
 
@@ -1251,8 +1311,8 @@ if __name__ == "__main__" and train_once:
     vae_train_data, vae_scaler = VAE_merge_data_per_timestep_new(train_paths, expected_cols, target_rows)
 
     # Load expected colums of test data excluding time
-    df_test = pd.read_csv(test_path).drop(columns=['Time (Cycle)'])
-    df_val = pd.read_csv(val_path).drop(columns='Time (Cycle)')
+    df_test = pd.read_csv(test_path).drop(columns=['Time (cycle)'])
+    df_val = pd.read_csv(val_path).drop(columns='Time (cycle)')
     df_test = df_test[expected_cols]
     df_val = df_val[expected_cols]
 
@@ -1306,6 +1366,7 @@ if __name__ == "__main__" and train_once:
     plt.title('Test panel = 2')
     plt.xlabel('Lifetime (%)')
     plt.ylabel('HI')
+    plt.ylim((-0.1, 1.1))
     plt.legend()
     plt.savefig(filepath)
     plt.show()
