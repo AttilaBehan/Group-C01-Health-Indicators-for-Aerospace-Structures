@@ -23,7 +23,6 @@ import tensorflow_probability as tfp
 
 print(tf.__version__)
 print(tfp.__version__)
-
 from tensorflow.keras import layers, Model, regularizers
 from tensorflow.keras.callbacks import EarlyStopping
 import keras_tuner as kt
@@ -54,6 +53,61 @@ class VAE_Seed():
 
 def generate_equidistant_timestamps(target_rows):
     return np.linspace(0, 1, target_rows)
+
+''' Resampling data'''
+
+def resample_dataframe(df, target_rows):
+    """Resample each column in a DataFrame to target number of rows."""
+    resampled_data = {}
+    for col in df.columns:
+        original = df[col].values
+        x_original = np.linspace(0, 1, len(original))
+        x_target = np.linspace(0, 1, target_rows)
+        interpolated = np.interp(x_target, x_original, original)
+        resampled_data[col] = interpolated
+    return pd.DataFrame(resampled_data)
+
+''' Merging and scaling test data '''
+
+def VAE_merge_and_scale_data(sample_filenames, expected_cols, target_rows):
+    """
+    Load multiple AE data files, resample each to have target_rows rows via interpolation.
+    Combine all resampled data into a single dataframe: one row per time step.
+    Shape: (n_samples * target_rows, n_features)
+
+    Scales data feature wise and returns scalar
+    """
+    all_data = []
+
+    for path in sample_filenames:
+        print(f"Reading and resampling: {os.path.basename(path)}")
+
+        df = pd.read_csv(path)
+
+        # Column cleanup
+        cols_to_drop = ['Time (Cycle)', 'Unnamed: 0', 'Time']  # Combine checks
+        df = df.drop(columns=[col for col in cols_to_drop if col in df.columns])
+
+        missing = [col for col in expected_cols if col not in df.columns]
+        if missing:
+            raise ValueError(f"{os.path.basename(path)} missing columns: {missing}")
+        df = df[expected_cols]
+
+        # Resample each feature independently
+        df_resampled = resample_dataframe(df, target_rows)
+
+        all_data.append(df_resampled)
+
+    # Stack time steps from all samples
+    data = np.vstack(all_data)  # shape = (12 * target_rows, n_features)
+    print(f"✅ Merged data shape: {data.shape}")
+
+    # Standardize feature-wise (column-wise)
+    scaler = StandardScaler()
+    data_scaled = scaler.fit_transform(data)
+    print(f"✅ Data standardized, mean: {data_scaled.mean(axis=0)}, std: {data_scaled.std(axis=0)}")
+
+    return data_scaled, scaler
 
 ''' REGULARIZED VAE
         - Has dropout after Dense layers so it doesn't overfit on the small dataset (only have 10 samples)
@@ -376,10 +430,41 @@ def train_model(x_train, time_train, x_val, time_val,
 
 # Using model
 if __name__ == "__main__" and train_once:
+    target_rows = 300
     # Quickly adding bullshit data to see if code is running or there are errors
     num_samples = 10
     x_train = tf.random.normal((num_samples, 300, 201))
     time_train = tf.linspace(0., 1., num_samples)[:, None]  # Normalized 0-1
+
+    # Getting data filepaths
+    feature_level_data_base_path = r"C:\Users\naomi\OneDrive\Documents\Low_Features\Statistical_Features_CSV"
+    all_paths = glob.glob(feature_level_data_base_path + "/*.csv")
+    n_filepaths = len(all_paths)
+
+    # Expected feature columns
+    df_sample1 = pd.read_csv(all_paths[0])
+    expected_cols = list(df_sample1.columns)
+    expected_cols = expected_cols[1:]
+    num_features = len(expected_cols)
+
+    # Leave-one-out split
+    test_path = all_paths[2]
+    #val_path_idx = (i+5)%(int(n_filepaths))
+    val_path = all_paths[6]
+    #val_id = all_ids[val_path_idx]
+    train_paths = [p for j, p in enumerate(all_paths) if j != 2 and j!=6]
+
+    # Load and flatten (merge) training data csv files, resampling to 300 rows
+    vae_train_data, vae_scaler = VAE_merge_and_scale_data(train_paths, expected_cols, target_rows)
+    
+
+    # Load expected colums of test data excluding time
+    df_test = pd.read_csv(test_path).drop(columns=['Time (Cycle)'])
+    df_val = pd.read_csv(val_path).drop(columns='Time (Cycle)')
+    df_test = df_test[expected_cols]
+    df_val = df_val[expected_cols]
+
+
     
     x_val = tf.random.normal((300, 201))
     time_val = tf.convert_to_tensor(np.linspace(0,1,300))
@@ -603,62 +688,6 @@ class HealthIndicatorVAE(Model):
         }
 
 ''' Old Work:'''
-
-
-''' Resampling data'''
-
-def resample_dataframe(df, target_rows):
-    """Resample each column in a DataFrame to target number of rows."""
-    resampled_data = {}
-    for col in df.columns:
-        original = df[col].values
-        x_original = np.linspace(0, 1, len(original))
-        x_target = np.linspace(0, 1, target_rows)
-        interpolated = np.interp(x_target, x_original, original)
-        resampled_data[col] = interpolated
-    return pd.DataFrame(resampled_data)
-
-''' Merging and scaling test data '''
-
-def VAE_merge_and_scale_data(sample_filenames, expected_cols, target_rows):
-    """
-    Load multiple AE data files, resample each to have target_rows rows via interpolation.
-    Combine all resampled data into a single dataframe: one row per time step.
-    Shape: (n_samples * target_rows, n_features)
-
-    Scales data feature wise and returns scalar
-    """
-    all_data = []
-
-    for path in sample_filenames:
-        print(f"Reading and resampling: {os.path.basename(path)}")
-
-        df = pd.read_csv(path)
-
-        # Column cleanup
-        cols_to_drop = ['Time (Cycle)', 'Unnamed: 0', 'Time']  # Combine checks
-        df = df.drop(columns=[col for col in cols_to_drop if col in df.columns])
-
-        missing = [col for col in expected_cols if col not in df.columns]
-        if missing:
-            raise ValueError(f"{os.path.basename(path)} missing columns: {missing}")
-        df = df[expected_cols]
-
-        # Resample each feature independently
-        df_resampled = resample_dataframe(df, target_rows)
-
-        all_data.append(df_resampled)
-
-    # Stack time steps from all samples
-    data = np.vstack(all_data)  # shape = (12 * target_rows, n_features)
-    print(f"✅ Merged data shape: {data.shape}")
-
-    # Standardize feature-wise (column-wise)
-    scaler = StandardScaler()
-    data_scaled = scaler.fit_transform(data)
-    print(f"✅ Data standardized, mean: {data_scaled.mean(axis=0)}, std: {data_scaled.std(axis=0)}")
-
-    return data_scaled, scaler
 
 ''' Loss coefficient annealing (KL, Mo etc. so reconstruction is prioritized initially)'''
 def compute_annealing_loss_weight(epoch, total_epochs, max_loss_coef, start_epoch=50):
