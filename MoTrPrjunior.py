@@ -27,8 +27,8 @@ def Tr(X):
 
 # List of your folders
 folders = [
-    r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\feature extractrerd\C01_main\Extracted Features\EMD_Features_interpolated_500_500_CSV",
-    #r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\feature extractrerd\C01_main\Extracted Features\FFT_Features_interpolated500_500_CSV",
+    #r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\feature extractrerd\C01_main\Extracted Features\EMD_Features_interpolated_500_500_CSV",
+    r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\feature extractrerd\C01_main\Extracted Features\FFT_Features_interpolated500_500_CSV",
     #r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\feature extractrerd\C01_main\Extracted Features\STFT_Features_interpolated_500_500_CSV"
 ]
 
@@ -36,7 +36,7 @@ folders = [
 trendability_results = {}
 
 # Target resample length
-target_length = 100
+target_length = 10
 
 for folder in folders:
     file_paths = glob.glob(os.path.join(folder, "*.csv"))
