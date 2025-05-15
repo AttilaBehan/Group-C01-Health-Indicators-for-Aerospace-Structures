@@ -45,6 +45,18 @@ expected_cols = expected_cols[1:]
 
 target_rows = 300
 
+''' Resampling test and validation data'''
+def resample_dataframe(df, target_rows):
+    """Resample each column in a DataFrame to target number of rows."""
+    resampled_data = {}
+    for col in df.columns:
+        original = df[col].values
+        x_original = np.linspace(0, 1, len(original))
+        x_target = np.linspace(0, 1, target_rows)
+        interpolated = np.interp(x_target, x_original, original)
+        resampled_data[col] = interpolated
+    return pd.DataFrame(resampled_data)
+
 
 ''' STRUCTURE OF THE CODE:
 
@@ -148,10 +160,14 @@ def VAE_merge_data_per_timestep_new(sample_filenames, expected_cols, target_rows
 
         df = pd.read_csv(path)
 
-        if 'Time' in df.columns:
-            df = df.drop(columns=['Time (Cycle)'])
-        if 'Unnamed: 0' in df.columns:
-            df = df.drop(columns=['Unnamed: 0'])
+        # Column cleanup
+        cols_to_drop = ['Time (Cycle)', 'Unnamed: 0', 'Time']  # Combine checks
+        df = df.drop(columns=[col for col in cols_to_drop if col in df.columns])
+
+        # if 'Time' in df.columns:
+        #     df = df.drop(columns=['Time (Cycle)'])
+        # if 'Unnamed: 0' in df.columns:
+        #     df = df.drop(columns=['Unnamed: 0'])
 
         missing = [col for col in expected_cols if col not in df.columns]
         if missing:
@@ -159,13 +175,15 @@ def VAE_merge_data_per_timestep_new(sample_filenames, expected_cols, target_rows
         df = df[expected_cols]
 
         # Resample each feature independently
-        df_resampled = pd.DataFrame()
-        for col in df.columns:
-            original = df[col].values
-            x_original = np.linspace(0, 1, len(original))
-            x_target = np.linspace(0, 1, target_rows)
-            interpolated = np.interp(x_target, x_original, original)
-            df_resampled[col] = interpolated
+        df_resampled = resample_dataframe(df, target_rows)
+
+        # df_resampled = pd.DataFrame()
+        # for col in df.columns:
+        #     original = df[col].values
+        #     x_original = np.linspace(0, 1, len(original))
+        #     x_target = np.linspace(0, 1, target_rows)
+        #     interpolated = np.interp(x_target, x_original, original)
+        #     df_resampled[col] = interpolated
 
         all_data.append(df_resampled)
 
@@ -277,22 +295,24 @@ def vae_loss(x, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, molos
     # Make x and x_recon same float type
     x = tf.cast(x, tf.float32)
     if x.shape[1]>0:
-        reloss = tf.reduce_sum(tf.square(x_recon - x), axis=0) # Sums squared errors across features for each sample in batch, output shape = (bathc_size,)
+        reloss = tf.reduce_sum(tf.square(x_recon - x), axis=1) # Sums squared errors across features for each sample in batch, output shape = (bathc_size,)
         # Term inside reduce_sum is KL divergence between N(mu, var) and N(0,1), axis=1 sums KL terms across latent dimensions for each sample, output shape = (batch_size,)
-        klloss = -0.5 * tf.reduce_mean(1 + logvar - tf.square(mean) - tf.exp(logvar+1e-8), axis=0) # Regularizes the latent space to follow a standard normal distribution N(0, I).
+        klloss = -0.5 * tf.reduce_sum(1 + logvar - tf.square(mean) - tf.exp(logvar+1e-8), axis=1) # Regularizes the latent space to follow a standard normal distribution N(0, I).
         # Computes health change in time: health[t]-health[t-1] (output shape = (batch_size, timesteps-1))
         diffs = health[1:] - health[:-1]
         # tf.nn.relu(-diffs) returns non-zero value of change if health decreases
         fealoss = tf.reduce_sum(tf.nn.relu(-diffs)) # sums all penalties across batches and timesteps
+        #print(f'reloss: {reloss.shape} \n klloss: {klloss.shape} \n fealoss: {fealoss}')
         loss = tf.reduce_mean(reloss_coeff * reloss + klloss_coeff * klloss + moloss_coeff * fealoss) # weighted sum of losses, averaged over the batch
     else:
         reloss = tf.reduce_sum(tf.square(x_recon - x), axis=1) # Sums squared errors across features for each sample in batch, output shape = (bathc_size,)
         # Term inside reduce_sum is KL divergence between N(mu, var) and N(0,1), axis=1 sums KL terms across latent dimensions for each sample, output shape = (batch_size,)
-        klloss = -0.5 * tf.reduce_mean(1 + logvar - tf.square(mean) - tf.exp(logvar+1e-8), axis=1) # Regularizes the latent space to follow a standard normal distribution N(0, I).
+        klloss = -0.5 * tf.reduce_sum(1 + logvar - tf.square(mean) - tf.exp(logvar+1e-8), axis=1) # Regularizes the latent space to follow a standard normal distribution N(0, I).
         # Computes health change in time: health[t]-health[t-1] (output shape = (batch_size, timesteps-1))
         diffs = health[:, 1:] - health[:, :-1]
         # tf.nn.relu(-diffs) returns non-zero value of change if health decreases
         fealoss = tf.reduce_sum(tf.nn.relu(-diffs)) # sums all penalties across batches and timesteps
+        print(f'reloss: {reloss.shape} \n klloss: {klloss.shape} \n fealoss: {fealoss}')
         loss = tf.reduce_mean(reloss_coeff * reloss + klloss_coeff * klloss + moloss_coeff * fealoss) # weighted sum of losses, averaged over the batch
     return loss
 
@@ -997,17 +1017,20 @@ def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data,
         df_test = df_test[expected_cols]
         df_val = df_val[expected_cols]
 
-        df_test_resampled = pd.DataFrame()
-        df_val_resampled = pd.DataFrame()
-        for col in df_test.columns: # interpolates test data columns so they are sampe length as target rows of train data
-            original = df_test[col].values
-            og = df_val[col].values
-            x_original = np.linspace(0, 1, len(original))
-            x_target = np.linspace(0, 1, target_rows)
-            interpolated = np.interp(x_target, x_original, original)
-            interp = np.interp(x_target, x_original, og)
-            df_test_resampled[col] = interpolated
-            df_val_resampled[col] = interp
+        # df_test_resampled = pd.DataFrame()
+        # df_val_resampled = pd.DataFrame()
+        # for col in df_test.columns: # interpolates test data columns so they are sampe length as target rows of train data
+        #     original = df_test[col].values
+        #     og = df_val[col].values
+        #     x_original = np.linspace(0, 1, len(original))
+        #     x_target = np.linspace(0, 1, target_rows)
+        #     interpolated = np.interp(x_target, x_original, original)
+        #     interp = np.interp(x_target, x_original, og)
+        #     df_test_resampled[col] = interpolated
+        #     df_val_resampled[col] = interp
+        
+        df_test_resampled = resample_dataframe(df_test, target_rows)
+        df_val_resampled = resample_dataframe(df_val, target_rows)
 
         # If using old MERGE_DATA - Row major order flattening into 1D array (Row1, Row2, Row3... successive), then reshapes to go from one row to one column
         vae_test_data = df_test_resampled.values()
@@ -1089,18 +1112,21 @@ if __name__ == "__main__" and train_once:
     df_test = df_test[expected_cols]
     df_val = df_val[expected_cols]
 
-    df_test_resampled = pd.DataFrame()
-    df_val_resampled = pd.DataFrame()
-    for col in df_test.columns: # interpolates test data columns so they are sampe length as target rows of train data
-        original = df_test[col].values
-        og = df_val[col].values
-        x_original = np.linspace(0, 1, len(original))
-        x_val_original = np.linspace(0,1,len(og))
-        x_target = np.linspace(0, 1, target_rows)
-        interpolated = np.interp(x_target, x_original, original)
-        interp = np.interp(x_target, x_val_original, og)
-        df_test_resampled[col] = interpolated
-        df_val_resampled[col] = interp
+    # df_test_resampled = pd.DataFrame()
+    # df_val_resampled = pd.DataFrame()
+    # for col in df_test.columns: # interpolates test data columns so they are sampe length as target rows of train data
+    #     original = df_test[col].values
+    #     og = df_val[col].values
+    #     x_original = np.linspace(0, 1, len(original))
+    #     x_val_original = np.linspace(0,1,len(og))
+    #     x_target = np.linspace(0, 1, target_rows)
+    #     interpolated = np.interp(x_target, x_original, original)
+    #     interp = np.interp(x_target, x_val_original, og)
+    #     df_test_resampled[col] = interpolated
+    #     df_val_resampled[col] = interp
+
+    df_test_resampled = resample_dataframe(df_test, target_rows)
+    df_val_resampled = resample_dataframe(df_val, target_rows)
 
     vae_test_data = df_test_resampled.values
     vae_val_data = df_val_resampled.values
