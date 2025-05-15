@@ -38,11 +38,12 @@ def plot_results(train_data, test_data, filepath, show):
     else:
         plt.savefig(filepath, dpi=300, bbox_inches='tight', pad_inches=0.5)
         print(f"Plot saved succesfully to {filepath}")
+if __name__ == "__main":
+    N = 120  # or whatever your time resolution is  # x-axis for all curves
 
-N = 120  # or whatever your time resolution is  # x-axis for all curves
-
-# Example placeholder data
-# Replace with your actual train/test data
-train_data = np.random.rand(12, 11, N)
-test_data = np.random.rand(12, N)
-plot_results(train_data, test_data, r"C:\Users\job\Downloads", False)
+    # Example placeholder data
+    # Replace with your actual train/test data
+    train_data = np.random.rand(12, 11, N)
+    test_data = np.random.rand(12, N)
+    plot_results(train_data, test_data, r"C:\Users\job\Downloads", True)
+    print(train_data.shape, test_data.shape)
