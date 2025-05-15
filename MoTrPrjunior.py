@@ -13,7 +13,7 @@ def Tr(X):
     """
     m, n = X.shape
     min_trendability = np.inf
-
+    print(m)
     for j in range(m):
         for k in range(j + 1, m):  # Avoid duplicate pairs & self-comparison
             vector1 = X[j]
@@ -21,6 +21,7 @@ def Tr(X):
 
             rho = pearsonr(vector1, vector2)[0]
             min_trendability = min(min_trendability, abs(rho))
+        print(j)
 
     return min_trendability
 
