@@ -408,8 +408,9 @@ def train_model(x_train, time_train, x_val, time_val,
             f"{name} timesteps shape mismatch"
     
     # Checks shapes of training and validation data
-    validate_shapes((x_train, time_train), "Training")
-    validate_shapes((x_val, time_val), "Validation")
+    print(x_train.shape, time_train.shape)
+    #validate_shapes((x_train, time_train), "Training")
+    #validate_shapes((x_val, time_val), "Validation")
     
     # Start trainging model
     history = vae.fit(
@@ -429,12 +430,15 @@ def train_model(x_train, time_train, x_val, time_val,
     return vae, history
 
 # Using model
+train_once = True
 if __name__ == "__main__" and train_once:
     target_rows = 300
     # Quickly adding bullshit data to see if code is running or there are errors
     num_samples = 10
     x_train = tf.random.normal((num_samples, 300, 201))
-    time_train = tf.linspace(0., 1., num_samples)[:, None]  # Normalized 0-1
+    time_single = tf.linspace(0., 1., target_rows)[:, None]  # Normalized 0-1
+    time_train = tf.tile(time_single[None, :, :], [num_samples, 1, 1])  # shape: [10, target_rows, 1]
+    print(time_train.shape)
 
     # Getting data filepaths
     feature_level_data_base_path = r"C:\Users\job\OneDrive - Delft University of Technology\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE_AE_DATA"
