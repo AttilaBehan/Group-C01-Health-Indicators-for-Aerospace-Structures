@@ -10,7 +10,7 @@ from skopt.utils import use_named_args
 from Prog_crit import fitness, test_fitness, scale_exact
 import os
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import random
@@ -84,29 +84,46 @@ def compute_kl_weight(epoch, total_epochs, max_klloss_coef, start_epoch=50):
 import tensorflow as tf
 
 class VAE(tf.keras.Model):
-    def __init__(self, input_dim, timesteps, hidden_0, hidden_1, hidden_2):
+    def __init__(self, input_dim, timesteps, hidden_0=64, hidden_1=32, latent_dim=8):
+        # super(VAE, self).__init__()
+
+        # initializer = tf.keras.initializers.GlorotUniform(seed=42)
+        # #initializer = tf.keras.initializers.HeNormal(seed=42)  # Better for ReLU
+
         super(VAE, self).__init__()
-
-        initializer = tf.keras.initializers.GlorotUniform(seed=42)
-        #initializer = tf.keras.initializers.HeNormal(seed=42)  # Better for ReLU
-
-        # Encoder
+        
+        # Simplified Encoder
         self.encoder = tf.keras.Sequential([
-            tf.keras.layers.Input(shape=(timesteps, input_dim)),
-            tf.keras.layers.LSTM(hidden_0, return_sequences=False, kernel_initializer=initializer),
-            tf.keras.layers.Dense(hidden_1, activation='relu', kernel_initializer=initializer),
-            tf.keras.layers.Dense(hidden_2 * 2, kernel_initializer=initializer),  # Outputs mean and logvar concatenated
-            tf.keras.layers.BatchNormalization()
+            tf.keras.layers.LSTM(hidden_0, return_sequences=False),
+            tf.keras.layers.Dense(hidden_1, activation='relu'),
+            tf.keras.layers.Dense(latent_dim * 2)  # mean + logvar
+        ])
+        
+        # Simplified Decoder
+        self.decoder = tf.keras.Sequential([
+            tf.keras.layers.Dense(hidden_1, activation='relu'),
+            tf.keras.layers.RepeatVector(timesteps),
+            tf.keras.layers.LSTM(hidden_0, return_sequences=True),
+            tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(input_dim))
         ])
 
-        # Decoder
-        self.decoder = tf.keras.Sequential([
-            tf.keras.layers.Input(shape=(hidden_2,)),
-            tf.keras.layers.Dense(hidden_1, activation='relu', kernel_initializer=initializer),
-            tf.keras.layers.RepeatVector(timesteps), # Expand latent vector for LSTM sequence decoding
-            tf.keras.layers.LSTM(hidden_0, return_sequences=True, kernel_initializer=initializer),
-            tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(input_dim, activation='linear'))  # No activation because we normalized data to Z(0,1)
-        ])
+        # # Encoder
+        # self.encoder = tf.keras.Sequential([
+        #     tf.keras.layers.Input(shape=(timesteps, input_dim)),
+        #     tf.keras.layers.LSTM(hidden_0, return_sequences=False, kernel_initializer=initializer),
+        #     tf.keras.layers.Dense(hidden_1, activation='relu', kernel_initializer=initializer),
+        #     tf.keras.layers.Dense(hidden_2 * 2, kernel_initializer=initializer),  # Outputs mean and logvar concatenated
+        #     tf.keras.layers.BatchNormalization()
+        # ])
+
+        # # Decoder
+        # self.decoder = tf.keras.Sequential([
+        #     tf.keras.layers.Input(shape=(hidden_2,)),
+        #     tf.keras.layers.Dense(hidden_1, activation='relu', kernel_initializer=initializer),
+        #     tf.keras.layers.RepeatVector(timesteps), # Expand latent vector for LSTM sequence decoding
+        #     tf.keras.layers.LSTM(hidden_0, return_sequences=True, kernel_initializer=initializer),
+        #     tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(input_dim, activation='linear'))  # No activation because we normalized data to Z(0,1)
+        # ])
 
 
     def encode(self, x):
@@ -177,10 +194,15 @@ def compute_health_indicator(x, x_recon, k=1.0):
 
 def vae_loss(x, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff):
     '''Check all reduce sum and mean things later, check which one it should be'''
+    # Check stability (gonna remove later)
+    print(f"Input range: {tf.reduce_min(x)} to {tf.reduce_max(x)}")
+    print(f"Recon range: {tf.reduce_min(x_recon)} to {tf.reduce_max(x_recon)}")
+
     # For 64 and 32 error
     x = tf.cast(x, x_recon.dtype)
     # Reconstruction loss (MSE summed over features and timesteps for each sample)
-    reloss = tf.reduce_sum(tf.square(x_recon - x), axis=[1, 2])  # shape: (batch_size,)
+    #reloss = tf.reduce_sum(tf.square(x_recon - x), axis=[1, 2])  # shape: (batch_size,)
+    reloss = tf.reduce_mean(tf.abs(x_recon - x), axis=[1,2])  # Try MAE
     reloss = tf.reduce_mean(reloss)
     # KL divergence loss (also per sample)
     klloss = -0.5 * tf.reduce_sum(1 + tf.clip_by_value(logvar, -10, 10) - tf.square(mean) - tf.exp(tf.clip_by_value(logvar, -10, 10) +1e-8), axis=1)# shape: (batch_size,)
@@ -246,6 +268,7 @@ def train_loop(train_dataset, timesteps, n_feaures, hidden_0, hidden_1, hidden_2
         
         # Training
         for batch_x in train_dataset:
+            #print(f'Batch_x shape: {batch_x.shape}')
             loss, reloss, klloss, fealoss = train_step(batch_x, vae, optimizer, reloss_coeff, klloss_coeff, moloss_coeff)
             train_losses.append(loss.numpy())
             relosses.append(reloss.numpy())
@@ -307,7 +330,7 @@ def evaluate_vae(dataset, vae):
     avg_klloss = sum(kllosses) / len(kllosses)
     avg_fealoss = sum(fealosses) / len(fealosses)
     hi = np.vstack(hi)
-    print(f"Test Loss: {avg_loss:.4f} \n RE Loss: {avg_reloss:.4f} \t RE Loss: {avg_klloss:.4f} \t MO Loss: {avg_fealoss:.4f}")
+    print(f"Test Loss: {avg_loss:.4f} \n RE Loss: {avg_reloss:.4f} \t KL Loss: {avg_klloss:.4f} \t MO Loss: {avg_fealoss:.4f}")
     return avg_loss, hi
     
 # def get_data_to_arrays_list(test_filepaths_lst, train_filepaths_lst, val_filepaths_lst, total_timesteps_interp):
@@ -317,19 +340,19 @@ if __name__ == "__main__" and try_train_once:
     # variables:
     total_timesteps_interp = 600
     timesteps = 10
-    batch_size = 10
+    batch_size = 30
 
-    epochs = 300
-    lr = 1e-5
-    reloss_coeff = 0.89
-    klloss_coeff = 0.05
-    moloss_coeff = 0.06
+    epochs = 100
+    lr = 1e-4
+    reloss_coeff = 0.85
+    klloss_coeff = 0.1
+    moloss_coeff = 0.05
 
-    hidden_1 = 30
-    hidden_2 = 10
+    hidden_1 = 32
+    hidden_2 = 8
 
     # Training_data_folder
-    file_paths_folder = r"c:\Users\naomi\OneDrive\Documents\Time_Domain_High_Features"
+    file_paths_folder = r"C:\Users\naomi\OneDrive\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE_AE_DATA"
     # Get a list of CSV file paths in the folder
     all_paths = glob.glob(file_paths_folder + "/*.csv")
     test_path = all_paths[0]
@@ -339,28 +362,33 @@ if __name__ == "__main__" and try_train_once:
     df_sample1 = pd.read_csv(train_paths[0])
     expected_cols = list(df_sample1.columns)
     expected_cols = expected_cols[1:]
-    n_features = len(expected_cols)
 
     train_arrays = []
     for path in train_paths:
         df = pd.read_csv(path)
         df = df.drop(df.columns[0], axis=1)
-        df_resampled = resample_dataframe(df, total_timesteps_interp)
+        df_freq = df.loc[:, df.columns.str.contains('Freq')]
+        df_resampled = resample_dataframe(df_freq, total_timesteps_interp)
         train_arrays.append(df_resampled.to_numpy())
 
     # Normalizing data
     train_arrays_to_normalize = np.vstack(train_arrays)
-    scaler = StandardScaler()
+    #scaler = StandardScaler()
+    scaler = MinMaxScaler(feature_range=(0, 1))  # try (-1, 1) otherwise
     scaler.fit(train_arrays_to_normalize)
 
     train_arrays = [scaler.transform(arr) for arr in train_arrays]
     
     df_test = pd.read_csv(test_path)
-    df_test_resampled = resample_dataframe(df_test.drop(df_test.columns[0], axis=1), total_timesteps_interp)
+    df_test = df_test.drop(df_test.columns[0], axis=1)
+    df_freq_test = df_test.loc[:, df_test.columns.str.contains('Freq')]
+    df_test_resampled = resample_dataframe(df_freq_test, total_timesteps_interp)
     test_arrays = [df_test_resampled.to_numpy()]
 
     df_val = pd.read_csv(val_path)
-    df_val_resampled = resample_dataframe(df_val.drop(df_val.columns[0], axis=1), total_timesteps_interp)
+    df_val = df_val.drop(df_val.columns[0], axis=1)
+    df_freq_val = df_val.loc[:, df_val.columns.str.contains('Freq')]
+    df_val_resampled = resample_dataframe(df_freq_val, total_timesteps_interp)
     val_arrays = [df_val_resampled.to_numpy()]
 
     val_arrays = [scaler.transform(arr) for arr in val_arrays]
@@ -370,7 +398,10 @@ if __name__ == "__main__" and try_train_once:
     print(f"Test data shape: {test_arrays[0].shape}")
     print(f"Validation data shape: {val_arrays[0].shape}")
 
-    hidden_0 = train_arrays[0].shape[1]
+    n_features = test_arrays[0].shape[1]
+
+    hidden_0 = train_arrays[0].shape[0]
+    hidden_0 = 64
 
     # Split data into batches:
     train_dataset = create_batches_from_arrays_list(train_arrays, timesteps, batch_size)
@@ -389,6 +420,16 @@ if __name__ == "__main__" and try_train_once:
     print(f'\n HI test: {hi_test}')
 
     print(f'VAE evaluation on test set conplete')
+
+    hi_test = hi_test.flatten(order='c')
+    time = np.linspace(0, 1, hi_test.shape[0])
+    plt.plot(time, hi_test, label='Test data', color='b')
+    plt.xlabel('Time')
+    plt.ylabel('HI')
+    plt.legend()
+    plt.show()
+
+
 
 ''' Old work'''
 
