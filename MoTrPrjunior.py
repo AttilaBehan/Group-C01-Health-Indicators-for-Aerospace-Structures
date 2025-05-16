@@ -7,6 +7,7 @@ from scipy.stats import pearsonr
 from sklearn.preprocessing import Normalizer
 import math
 from itertools import combinations
+import pandas as pd
 
 def Tr(X):
     """
@@ -116,35 +117,60 @@ def Tr(X):
 
 # List of your folders
 folders = [
-    r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\feature extractrerd\C01_main\Extracted Features\EMD_Features_interpolated_500_500_CSV",
+    # r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\feature extractrerd\C01_main\Extracted Features\EMD_Features_interpolated_500_500_CSV",
+    r"C:\Users\attil\OneDrive\TU_Delft\C01_main\Extracted Features\FFT_Features_interpolated500_500_CSV"
     #r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\feature extractrerd\C01_main\Extracted Features\FFT_Features_interpolated500_500_CSV",
     #r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\feature extractrerd\C01_main\Extracted Features\STFT_Features_interpolated_500_500_CSV"
 ]
 
+directory=r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs"
+os.makedirs(directory, exist_ok=True)
 # Dictionary to store trendability results
 trendability_results = {}
 
 # Target resample length
-target_length = 10
+target_length = 100
 
 for folder in folders:
     file_paths = glob.glob(os.path.join(folder, "*.csv"))
     file_paths.sort()
 
     all_his = []
-
+    HIdf=pd.DataFrame()
     for file_path in file_paths:
-        data = np.genfromtxt(file_path, delimiter=',')
-        cleaned_data = data[~np.isnan(data).all(axis=1)]
-        transpose = cleaned_data.T
-        data_end = transpose[1:, 1:]  # Drop first row and column
+        # data = np.genfromtxt(file_path, delimiter=',')
+        df=pd.read_csv(file_path)
 
+        # cleaned_data = data[~np.isnan(data).all(axis=1)]
+        df.dropna()
+
+        df= df.iloc[1:, 1:]  # Drop first row and column
+        M,N= df.shape
+        Z=int(N/6)
+        features=df.columns.to_list()[1:Z+1]
+        features=[i[i.index('_')+1:] for i in features]
+        print(file_path)
+        for i in range(Z):
+            dir=os.path.join(directory, f"{features[i]}.csv")  
+            if not os.path.exists(dir):
+                new_df=pd.DataFrame()
+            else:
+                new_df=pd.read_csv(dir)
+            loclist= np.arange(i, Z*5+i+1, Z)
+            for loc in loclist:
+                new_df= pd.concat([new_df, df.iloc[:, loc]], axis=1)
+            resampled_data = resample(new_df.T, target_length, axis=1)
+            HIdf=pd.concat([HIdf, pd.DataFrame(resampled_data)], axis=0)
+            HIdf.to_csv(dir, index=False)
+            
+
+        # transpose = cleaned_data.T
         # Resample this file's data to target_length (along columns)
-        resampled_data = resample(data_end, target_length, axis=1)
+        # resampled_data = resample(data_end, target_length, axis=1)
 
-        all_his.append(resampled_data)
-        print('done')
-
+        # all_his.append(resampled_data)
+        # print('done')
+    break
     print(f"Resampled all HIs to {target_length} columns.")
 
     # Stack into X (m HIs x n Samples)
@@ -168,3 +194,4 @@ for folder in folders:
 print("\nTrendability Results Summary:")
 for folder, score in trendability_results.items():
     print(f"{os.path.basename(folder)}: {score:.4f}")
+
