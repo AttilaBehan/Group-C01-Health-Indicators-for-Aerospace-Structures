@@ -20,15 +20,18 @@ def Tr(X):
             vector2 = X[k]
 
             rho = pearsonr(vector1, vector2)[0]
+
             min_trendability = min(min_trendability, abs(rho))
         print(j)
+        print(rho)
+        print(min_trendability)
 
     return min_trendability
 
 # List of your folders
 folders = [
-    #r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\feature extractrerd\C01_main\Extracted Features\EMD_Features_interpolated_500_500_CSV",
-    r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\feature extractrerd\C01_main\Extracted Features\FFT_Features_interpolated500_500_CSV",
+    r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\feature extractrerd\C01_main\Extracted Features\EMD_Features_interpolated_500_500_CSV",
+    #r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\feature extractrerd\C01_main\Extracted Features\FFT_Features_interpolated500_500_CSV",
     #r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\feature extractrerd\C01_main\Extracted Features\STFT_Features_interpolated_500_500_CSV"
 ]
 
@@ -36,7 +39,7 @@ folders = [
 trendability_results = {}
 
 # Target resample length
-target_length = 10
+target_length = 40
 
 for folder in folders:
     file_paths = glob.glob(os.path.join(folder, "*.csv"))
