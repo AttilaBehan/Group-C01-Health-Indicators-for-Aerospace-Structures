@@ -20,11 +20,11 @@ def Tr(X):
             vector2 = X[k]
 
             rho = pearsonr(vector1, vector2)[0]
-            print(rho)
 
             min_trendability = min(min_trendability, abs(rho))
-            print(min_trendability)
         print(j)
+        print(rho)
+        print(min_trendability)
 
     return min_trendability
 
