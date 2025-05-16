@@ -5,31 +5,40 @@ import glob
 import os
 import zipfile
 
+re_losses = [
+0.3424, 0.1627, 0.1403, 0.1299, 0.1235, 0.1206, 0.1172, 0.1157, 0.1152, 0.1147,
+0.1143, 0.1141, 0.1139, 0.1136, 0.1134, 0.1132, 0.1130, 0.1130, 0.1126, 0.1128,
+0.1128, 0.1125, 0.1125, 0.1124, 0.1123, 0.1121, 0.1121, 0.1123, 0.1123, 0.1123,
+0.1119, 0.1120, 0.1121, 0.1121, 0.1121, 0.1122, 0.1120, 0.1120, 0.1120, 0.1120,
+0.1119, 0.1119, 0.1121
+]
 
-preview_smoothed_df = False
-''' 
-The SPWVD code requires some additional processing and windowing which is done here, this code has the following structure:
+kl_losses = [0.0010, 0.0042, 0.0085, 0.0129, 0.0171, 0.0213, 0.0244, 0.0266, 0.0277, 0.0284,
+                0.0283, 0.0278, 0.0269, 0.0256, 0.0243, 0.0229, 0.0216, 0.0206, 0.0199, 0.0184,
+                0.0174, 0.0171, 0.0162, 0.0149, 0.0141, 0.0136, 0.0131, 0.0124, 0.0115, 0.0114,
+                0.0112, 0.0111, 0.0113, 0.0111, 0.0115, 0.0115, 0.0119, 0.0120, 0.0125, 0.0131,
+                0.0138, 0.0142, 0.0151]
 
-    0. Extract input data zip file
-    1. Input and output folders and file names defined as well as which data columns to use
-    2. Downsampling parameters defined
-    3. Functions for smoothing, downsampling and windowing, and only downsampling defined
-    4. Functions applied to all input files and downsampled files saved
-'''
+mo_losses = [0.0175, 0.0274, 0.0285, 0.0287, 0.0286, 0.0282, 0.0279, 0.0268, 0.0259, 0.0249,
+             0.0247, 0.0242, 0.0239, 0.0238, 0.0238, 0.0235, 0.0239, 0.0240, 0.0237, 0.0234,
+             0.0234, 0.0234, 0.0232, 0.0231, 0.0234, 0.0232, 0.0233, 0.0232, 0.0230, 0.0231,
+             0.0228, 0.0230, 0.0231, 0.0228, 0.0229, 0.0230, 0.0230, 0.0229, 0.0228, 0.0228,
+             0.0230, 0.0229, 0.0228]
 
-# 0. Extracting ZIP with interpolated
+train_losses = [
+0.3322, 0.1578, 0.1361, 0.1260, 0.1198, 0.1170, 0.1137, 0.1122, 0.1117, 0.1112,
+0.1109, 0.1107, 0.1105, 0.1102, 0.1100, 0.1099, 0.1096, 0.1096, 0.1093, 0.1094,
+0.1094, 0.1091, 0.1091, 0.1091, 0.1090, 0.1087, 0.1088, 0.1089, 0.1089, 0.1089,
+0.1086, 0.1087, 0.1088, 0.1088, 0.1088, 0.1088, 0.1087, 0.1086, 0.1086, 0.1086,
+0.1086, 0.1085, 0.1087
+]
 
-# Path to interpolated ZIP file
-input_data_zip_path = r"C:\Users\naomi\OneDrive\Documents\Time_Domain_Features_500_500_CSV.zip\Time_Domain_Features_500_500_CSV"
+val_losses = [
+0.1924, 0.1818, 0.1794, 0.1736, 0.1785, 0.1770, 0.1732, 0.1724, 0.1698, 0.1632,
+0.1635, 0.1639, 0.1591, 0.1531, 0.1532, 0.1513, 0.1515, 0.1510, 0.1396, 0.1455,
+0.1451, 0.1443, 0.1385, 0.1468, 0.1422, 0.1425, 0.1481, 0.1426, 0.1433, 0.1415,
+0.1509, 0.1396, 0.1399, 0.1444, 0.1428, 0.1427, 0.1400, 0.1422, 0.1421, 0.1443,
+0.1398, 0.1400, 0.1405
+]
 
-# Folder where you want to extract the files
-extract_to_folder = r"c:\Users\naomi\OneDrive\Documents\Low_Features\Time_Domain_Features"
-
-# Create the folder if it doesn't exist
-os.makedirs(extract_to_folder, exist_ok=True)
-
-# Extract the ZIP
-with zipfile.ZipFile(input_data_zip_path, 'r') as zip_ref:
-    zip_ref.extractall(extract_to_folder)
-
-print(f"Zip files extracted to: {extract_to_folder}")
+print(len(val_losses))

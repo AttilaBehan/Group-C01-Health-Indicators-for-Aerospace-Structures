@@ -91,20 +91,71 @@ class VAE(tf.keras.Model):
         # #initializer = tf.keras.initializers.HeNormal(seed=42)  # Better for ReLU
 
         super(VAE, self).__init__()
+
+        initializer = tf.keras.initializers.GlorotNormal(seed=42)
         
-        # Simplified Encoder
+        # # Simplified Encoder
+        # self.encoder = tf.keras.Sequential([
+        #     tf.keras.layers.LSTM(hidden_0, return_sequences=False),
+        #     tf.keras.layers.Dense(hidden_1, activation='relu'),
+        #     tf.keras.layers.Dense(latent_dim * 2)
+        # ])
+        
+        # # Simplified Decoder
+        # self.decoder = tf.keras.Sequential([
+        #     tf.keras.layers.Dense(hidden_1, activation='relu'),
+        #     tf.keras.layers.RepeatVector(timesteps),
+        #     tf.keras.layers.LSTM(hidden_0, return_sequences=True),
+        #     tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(input_dim))
+        # ])
+
+        # Enhanced Encoder
         self.encoder = tf.keras.Sequential([
-            tf.keras.layers.LSTM(hidden_0, return_sequences=False),
-            tf.keras.layers.Dense(hidden_1, activation='relu'),
-            tf.keras.layers.Dense(latent_dim * 2)  # mean + logvar
+            tf.keras.layers.Input(shape=(timesteps, input_dim)),
+            
+            # LSTM with recurrent dropout
+            tf.keras.layers.LSTM(hidden_0, 
+                               return_sequences=False,
+                               kernel_initializer=initializer,
+                               recurrent_dropout=0.1),
+            
+            # Hidden dense with L2 regularization
+            tf.keras.layers.Dense(hidden_1, 
+                                activation='relu',
+                                kernel_regularizer=tf.keras.regularizers.l2(0.001)),
+            
+            # Output layer with controlled initialization
+            tf.keras.layers.Dense(latent_dim * 2,
+                                kernel_initializer=initializer,
+                                activity_regularizer=tf.keras.regularizers.l1_l2(0.001)),
+            
+            # Gentle normalization
+            tf.keras.layers.BatchNormalization(momentum=0.9)
         ])
-        
-        # Simplified Decoder
+
+        # Stabilized Decoder
         self.decoder = tf.keras.Sequential([
-            tf.keras.layers.Dense(hidden_1, activation='relu'),
+            tf.keras.layers.Input(shape=(latent_dim,)),
+            
+            # Projection layer with dropout
+            tf.keras.layers.Dense(hidden_1, 
+                                activation='relu',
+                                kernel_initializer=initializer),
+            tf.keras.layers.Dropout(0.1),
+            
+            # Sequence reconstruction
             tf.keras.layers.RepeatVector(timesteps),
-            tf.keras.layers.LSTM(hidden_0, return_sequences=True),
-            tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(input_dim))
+            
+            # LSTM with careful initialization
+            tf.keras.layers.LSTM(hidden_0,
+                               return_sequences=True,
+                               kernel_initializer=initializer,
+                               recurrent_dropout=0.1),
+            
+            # Output layer with tanh activation for bounded output
+            tf.keras.layers.TimeDistributed(
+                tf.keras.layers.Dense(input_dim, 
+                                    activation='tanh'))  # Use tanh with data scaled to [-1,1], sigmoid [0,1]
         ])
 
         # # Encoder
@@ -195,8 +246,8 @@ def compute_health_indicator(x, x_recon, k=1.0):
 def vae_loss(x, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff):
     '''Check all reduce sum and mean things later, check which one it should be'''
     # Check stability (gonna remove later)
-    print(f"Input range: {tf.reduce_min(x)} to {tf.reduce_max(x)}")
-    print(f"Recon range: {tf.reduce_min(x_recon)} to {tf.reduce_max(x_recon)}")
+    # print(f"Input range: {tf.reduce_min(x)} to {tf.reduce_max(x)}")
+    # print(f"Recon range: {tf.reduce_min(x_recon)} to {tf.reduce_max(x_recon)}")
 
     # For 64 and 32 error
     x = tf.cast(x, x_recon.dtype)
@@ -234,7 +285,7 @@ def train_step(x, vae, optimizer, reloss_coeff, klloss_coeff, moloss_coeff):
                         reloss_coeff, klloss_coeff, moloss_coeff)
     gradients = tape.gradient(loss, vae.trainable_variables)
     optimizer.apply_gradients(zip(gradients, vae.trainable_variables))
-    return loss, reloss, klloss, fealoss
+    return loss, reloss, klloss, fealoss, health
 
 @tf.function
 def val_step(x, vae, reloss_coeff, klloss_coeff, moloss_coeff):
@@ -254,13 +305,13 @@ def train_loop(train_dataset, timesteps, n_feaures, hidden_0, hidden_1, hidden_2
     print(f'Start training...')
     print(f'\n Hyperparameters: \n RE loss coeff: {reloss_coeff} \t KL loss coeff: {klloss_coeff} \t MO loss coeff: {moloss_coeff} \n epochs: {epochs} \t learning rate: {lr}')
 
-
     for epoch in range(epochs):
         print(f"Epoch {epoch+1}/{epochs}")
         train_losses = []
         relosses = []
         kllosses = []
         fealosses = []
+        health_lst = []
 
         # INcreasing MO and KL loss coeff
         klloss_coeff = compute_annealing_loss_weight(epoch, epochs, klloss_coeff, start_epoch=20)
@@ -269,16 +320,19 @@ def train_loop(train_dataset, timesteps, n_feaures, hidden_0, hidden_1, hidden_2
         # Training
         for batch_x in train_dataset:
             #print(f'Batch_x shape: {batch_x.shape}')
-            loss, reloss, klloss, fealoss = train_step(batch_x, vae, optimizer, reloss_coeff, klloss_coeff, moloss_coeff)
+            loss, reloss, klloss, fealoss, health = train_step(batch_x, vae, optimizer, reloss_coeff, klloss_coeff, moloss_coeff)
             train_losses.append(loss.numpy())
             relosses.append(reloss.numpy())
             kllosses.append(klloss.numpy())
             fealosses.append(fealoss.numpy())
+            health_lst.append(health.numpy())
         
         avg_train_loss = sum(train_losses) / len(train_losses)
         avg_train_reloss = sum(relosses) / len(relosses)
         avg_train_klloss = sum(kllosses) / len(kllosses)
         avg_train_fealoss = sum(fealosses) / len(fealosses)
+        if epoch==(18):
+            health_end_training = health_lst
         
         # Validation (only one batch/sample in val_dataset)
         val_losses = []
@@ -307,9 +361,10 @@ def train_loop(train_dataset, timesteps, n_feaures, hidden_0, hidden_1, hidden_2
             break
     print(f"Training finished!!! Time: {time() - begin_time:.2f} seconds")
 
-    return vae
+    return vae, health_end_training
 
 def evaluate_vae(dataset, vae):
+    vae.trainable = False  # Freezes all weights
     hi = []
     losses = []
     relosses = []
@@ -340,13 +395,13 @@ if __name__ == "__main__" and try_train_once:
     # variables:
     total_timesteps_interp = 600
     timesteps = 10
-    batch_size = 30
+    batch_size = 1
 
-    epochs = 100
+    epochs = 60
     lr = 1e-4
-    reloss_coeff = 0.85
-    klloss_coeff = 0.1
-    moloss_coeff = 0.05
+    reloss_coeff = 0.97
+    klloss_coeff = 0.01
+    moloss_coeff = 0.02
 
     hidden_1 = 32
     hidden_2 = 8
@@ -374,7 +429,7 @@ if __name__ == "__main__" and try_train_once:
     # Normalizing data
     train_arrays_to_normalize = np.vstack(train_arrays)
     #scaler = StandardScaler()
-    scaler = MinMaxScaler(feature_range=(0, 1))  # try (-1, 1) otherwise
+    scaler = MinMaxScaler(feature_range=(-0.8, 0.8))  # try (-1, 1) otherwise
     scaler.fit(train_arrays_to_normalize)
 
     train_arrays = [scaler.transform(arr) for arr in train_arrays]
@@ -408,12 +463,27 @@ if __name__ == "__main__" and try_train_once:
     test_dataset = create_batches_from_arrays_list(test_arrays, timesteps, batch_size=1)
     val_dataset = create_batches_from_arrays_list(val_arrays, timesteps, batch_size=1)
 
-    vae = train_loop(train_dataset, timesteps, n_features, hidden_0, hidden_1, hidden_2, val_dataset, epochs, lr, reloss_coeff, klloss_coeff, moloss_coeff, patience=10)
+    vae, health_end_training = train_loop(train_dataset, timesteps, n_features, hidden_0, hidden_1, hidden_2, val_dataset, epochs, lr, reloss_coeff, klloss_coeff, moloss_coeff, patience=20)
     # vae.save_weights('vae_weights.h5')  # saves weights
     # # later, you can load weights back:
     # vae.load_weights('vae_weights.h5')
 
     test_loss, hi_test = evaluate_vae(test_dataset, vae)
+    train_loss, hi_train = evaluate_vae(train_dataset, vae)
+    val_loss, hi_val = evaluate_vae(val_dataset, vae)
+
+    # print(f'Shape of hi_train {hi_train.shape}')
+    # print(hi_train)
+
+    # print(f'health_lst shape {health_end_training}')
+    # print(f'type: {type(health_end_training)}')
+    health_train_end = np.array(health_end_training)
+
+    # print(health_train_end)
+    # print(f'shape of health end training {health_train_end.shape}')
+    hi_train = np.squeeze(health_train_end, axis=1)
+
+
 
     print(f'Test loss: {test_loss}')
 
@@ -426,8 +496,87 @@ if __name__ == "__main__" and try_train_once:
     plt.plot(time, hi_test, label='Test data', color='b')
     plt.xlabel('Time')
     plt.ylabel('HI')
+    plt.ylim(0, 1)
     plt.legend()
     plt.show()
+
+    hi_val = hi_val.flatten(order='c')
+    time_val = np.linspace(0, 1, hi_val.shape[0])
+    plt.plot(time_val, hi_val, label='Test data', color='r')
+    plt.xlabel('Time')
+    plt.ylabel('HI')
+    plt.ylim(0, 1)
+    plt.legend()
+    plt.show()
+
+    colors = ['b', 'r', 'g', 'c', 'm', 'y', 'orange', 'purple', 'brown', 'pink', 'gray', 'lime', 'violet', 'yellow']
+    
+    for i in range(hi_train.shape[1]):
+        plt.plot(time, hi_train[:, i], label={f'Sample {i+3}'}, color=colors[i])
+    plt.plot(time_val, hi_val, label='Test data', color='violet')
+    plt.plot(time, hi_test, label='Test data', color='yellow')
+    plt.xlabel('Time')
+    plt.ylabel('HI')
+    plt.ylim(0, 1)
+    plt.legend()
+    plt.show()
+
+    print(f'shape hi_train{hi_train.shape}')
+    # Plotting subplots
+    
+    fig, axes = plt.subplots(4, 3, figsize=(12, 18))
+    axes = axes.flatten()
+
+    # Plot validation and test on axes[0] and axes[1]
+    axes[0].plot(time, hi_test, label='Test (Sample 1)', color='black')
+    axes[0].set_xlabel('Time')
+    axes[0].set_ylabel('HI')
+    axes[0].set_ylim(0, 1)
+    axes[0].legend()
+
+    axes[1].plot(time_val, hi_val, label='Validation (Sample 2)', color='violet')
+    axes[1].set_xlabel('Time')
+    axes[1].set_ylabel('HI')
+    axes[1].set_ylim(0, 1)
+    axes[1].legend()
+
+    # Now plot hi_train samples on axes[2] to axes[11]
+    for i in range(2, 12):
+        if i-2 < hi_train.shape[1]:  # Ensure index is valid
+            ax = axes[i]
+            ax.plot(time, hi_train[:, i-2], label=f'Train Sample {i+1}', color=colors[i-2])
+            ax.set_xlabel('Time')
+            ax.set_ylabel('HI')
+            ax.set_ylim(0, 1)
+            ax.legend()
+
+    # Add suptitle before tight_layout with rect adjustment
+    plt.suptitle('Health Indicators generated by the VAE using FFT features', fontsize=16)
+    plt.tight_layout(rect=[0, 0, 1, 0.96])  # leave space for suptitle
+    plt.show()
+
+    # fig, axes = plt.subplots(3, 4, figsize=(18, 12))  # adjust size if needed
+    # axes = axes.flatten()  # to index like a 1D list
+
+    # for i in range(2,12):
+    #     ax = axes[i]
+    #     ax.plot(time, hi_train[:, i], label=f'Sample {i+3}', color=colors[i])
+
+    #     ax.set_xlabel('Time')
+    #     ax.set_ylabel('HI')
+    #     ax.set_ylim(0, 1)
+    # axes[0].plot(time_val, hi_val, label='Validation (Sample 2)', color='violet')
+    # axes[1].plot(time, hi_test, label='Test (Sample 1)', color='yellow')
+
+    # plt.legend()
+    # plt.tight_layout()
+    # plt.suptitle('Health Indicators generated by the VAE using FFT features')
+    # plt.show()
+
+    HI_all = np.vstack((hi_test.reshape(1, -1), hi_val.reshape(1, -1), hi_train.reshape(10, -1)))
+
+    ftn, mono, trend, prog, error = fitness(HI_all)
+    print(f'ftn, mono, trend, prog, error of HIs: {ftn, mono, trend, prog, error}')
 
 
 
