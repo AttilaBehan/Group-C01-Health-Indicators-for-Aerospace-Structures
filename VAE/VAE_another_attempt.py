@@ -19,7 +19,8 @@ from functools import partial
 import glob
 import inspect
 import sys
-import tensorflow_probability as tfp
+from scipy.interpolate import interp1d
+#import tensorflow_probability as tfp
 
 #print(tf.__version__)
 #print(tfp.__version__)
@@ -109,6 +110,47 @@ def VAE_merge_and_scale_data(sample_filenames, expected_cols, target_rows):
 
     return data_scaled, scaler
 
+def interpolate_samples(filepaths, target_rows):
+    processed = []
+    for path in filepaths:
+        print(f"Reading and resampling: {os.path.basename(path)}")
+
+        # Dropping the names in the df
+        df = pd.read_csv(path)
+        df_numbers = df.iloc[1:]
+        arr = df_numbers.to_numpy(dtype=float)
+
+        original_time = arr[:, 0]
+        features = arr[:, 1:]
+        
+        # Turn time into fraction of lifetime (from 0 to 1)
+        norm_time = (original_time - original_time.min()) / \
+                  (original_time.max() - original_time.min() + 1e-9)
+        
+        # Interpolation function for features, along time, bounds_errors deals with edge cases, fill_value uses neares value if theres an empty spot
+        interp_func = interp1d(
+            norm_time, features,
+            axis=0,
+            kind='linear',
+            bounds_error=False,
+            fill_value='extrapolate'
+        )
+        
+        # Makes new 0 to 1 time axis, assuming out stuff is equally spaced (should be)
+        new_time = np.linspace(0, 1, target_rows)
+        interp_features = interp_func(new_time)
+        
+        # Stick them together like ||| and then adds onto processed data
+        processed.append(np.column_stack([new_time, interp_features]))
+    return np.array(processed)
+
+# Getting data filepaths
+feature_level_data_base_path = r"C:\Users\naomi\OneDrive\Documents\Low_Features\Statistical_Features_CSV"
+all_paths = glob.glob(feature_level_data_base_path + "/*.csv")
+train_paths = all_paths[2:]
+processed_train_data = interpolate_samples(train_paths, target_rows=300)
+print(f'Processed training data: {processed_train_data} \n shape train data: {processed_train_data.shape}')
+
 ''' REGULARIZED VAE
         - Has dropout after Dense layers so it doesn't overfit on the small dataset (only have 10 samples)
         - L2 Weight Decay kernel_regularizer=regularizers.l2() Keeps weights small for better generalization
@@ -116,7 +158,7 @@ def VAE_merge_and_scale_data(sample_filenames, expected_cols, target_rows):
 
 class RegularizedHealthVAE(Model):
     def __init__(self, num_features=201, target_rows=300, latent_dim=32, 
-                 dropout_rate=0.2, l2_weight=1e-4):
+                 dropout_rate=0.2, l2_weight=1e-4, lstm_units=128):
         super().__init__()
         self.num_features = num_features
         self.target_rows = target_rows
@@ -133,30 +175,78 @@ class RegularizedHealthVAE(Model):
             trainable=True,
             constraint=lambda x: tf.nn.softmax(x)  # makes sure weights add up to 1
         )
-        
-        # Encoder with dropout -> processes each time step individually with TimeDistributed
+
+        # Encoder with LSTM
         self.encoder = tf.keras.Sequential([
-            layers.TimeDistributed(
-                layers.Dense(128, kernel_regularizer=kernel_reg),
-                input_shape=(target_rows, num_features)
-            ),
+            # First LSTM layer to process temporal patterns
+            layers.LSTM(lstm_units, 
+                      return_sequences=True, 
+                      kernel_regularizer=kernel_reg,
+                      input_shape=(target_rows, num_features)),
             layers.Dropout(dropout_rate),
-            layers.Flatten(),
+            
+            # Second LSTM layer with return_sequences=False to get final encoding
+            layers.LSTM(lstm_units, 
+                       kernel_regularizer=kernel_reg),
+            layers.Dropout(dropout_rate),
+            
+            # Dense layers to produce latent distribution parameters
             layers.Dense(256, kernel_regularizer=kernel_reg),
             layers.Dropout(dropout_rate),
-            layers.Dense(2 * latent_dim)  # mean and logvar so dim * 2
+            layers.Dense(2 * latent_dim)  # mean and logvar
         ])
         
-        # Decoder with matching dimensions (found that this is less efficient but we wanna calculate the reconstruction loss)
+        # Decoder with LSTM
         self.decoder = tf.keras.Sequential([
+            # Dense layer to expand from latent space
             layers.Dense(256, kernel_regularizer=kernel_reg),
             layers.Dropout(dropout_rate),
-            layers.Dense(target_rows * num_features),
-            layers.Reshape((target_rows, num_features)),
+            
+            # Repeat vector to prepare for LSTM sequence generation
+            layers.RepeatVector(target_rows),
+            
+            # First LSTM layer for sequence reconstruction
+            layers.LSTM(lstm_units, 
+                      return_sequences=True,
+                      kernel_regularizer=kernel_reg),
+            layers.Dropout(dropout_rate),
+            
+            # Second LSTM layer
+            layers.LSTM(lstm_units, 
+                      return_sequences=True,
+                      kernel_regularizer=kernel_reg),
+            layers.Dropout(dropout_rate),
+            
+            # Time-distributed dense layer for final reconstruction
             layers.TimeDistributed(
                 layers.Dense(num_features, kernel_regularizer=kernel_reg)
             )
         ])
+
+        
+        # # Encoder with dropout -> processes each time step individually with TimeDistributed
+        # self.encoder = tf.keras.Sequential([
+        #     layers.TimeDistributed(
+        #         layers.Dense(128, kernel_regularizer=kernel_reg),
+        #         input_shape=(target_rows, num_features)
+        #     ),
+        #     layers.Dropout(dropout_rate),
+        #     layers.Flatten(),
+        #     layers.Dense(256, kernel_regularizer=kernel_reg),
+        #     layers.Dropout(dropout_rate),
+        #     layers.Dense(2 * latent_dim)  # mean and logvar so dim * 2
+        # ])
+        
+        # # Decoder with matching dimensions (found that this is less efficient but we wanna calculate the reconstruction loss)
+        # self.decoder = tf.keras.Sequential([
+        #     layers.Dense(256, kernel_regularizer=kernel_reg),
+        #     layers.Dropout(dropout_rate),
+        #     layers.Dense(target_rows * num_features),
+        #     layers.Reshape((target_rows, num_features)),
+        #     layers.TimeDistributed(
+        #         layers.Dense(num_features, kernel_regularizer=kernel_reg)
+        #     )
+        # ])
         
         # Healthy state tracking - Reference for healthy state, updated during training (this will be used for the new HI based on mahalanobis distance in latent space)
         self.healthy_ref = tf.Variable(tf.zeros(latent_dim), trainable=False)
@@ -220,12 +310,25 @@ class RegularizedHealthVAE(Model):
         # Compute correlation between health and timesteps
         health_flat = tf.reshape(health, [-1])
         timesteps_flat = tf.reshape(timesteps, [-1])
+        # Compute means
+        mean_h = tf.reduce_mean(health_flat)
+        mean_t = tf.reduce_mean(timesteps_flat)
         
-        # Pearson correlation
-        correlation = tfp.stats.correlation(health_flat, timesteps_flat)
+        # Compute covariance
+        cov = tf.reduce_mean((health - mean_h) * (timesteps - mean_t))
+        
+        # Compute standard deviations
+        std_h = tf.sqrt(tf.reduce_mean(tf.square(health - mean_h)))
+        std_t = tf.sqrt(tf.reduce_mean(tf.square(timesteps - mean_t)))
+        
+        # Compute correlation
+        correlation = cov / (std_h * std_t + 1e-9)  # Small epsilon to avoid division by zero
+        
+        # Clip to handle any numerical instability
+        correlation = tf.clip_by_value(correlation, -1.0, 1.0)
         return tf.square(correlation + 1)  # Penalize if not perfectly negative correlation
     
-    def train_step(self, data):
+    def train_step(self, data, ):
         x, timesteps = data  # Make sure to enter data in the correct order when training
         
         with tf.GradientTape() as tape:
@@ -315,33 +418,33 @@ class RegularizedHealthVAE(Model):
 ''' TRAINING MODEL WITH VALIDATION SET:
         - Early stopping
         - Restores best weights if it needs to stop due to validation loss increasing'''
-def train_model(x_train, time_train, x_val, time_val):
-    vae = RegularizedHealthVAE(
-        num_features=201,
-        target_rows=300,
-        latent_dim=32,
-        dropout_rate=0.2,
-        l2_weight=1e-4
-    )
+# def train_model(x_train, time_train, x_val, time_val):
+#     vae = RegularizedHealthVAE(
+#         num_features=201,
+#         target_rows=300,
+#         latent_dim=32,
+#         dropout_rate=0.2,
+#         l2_weight=1e-4
+#     )
     
-    vae.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3))
+#     vae.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3))
     
-    early_stopping = EarlyStopping(
-        monitor='val_loss', 
-        patience=15,
-        restore_best_weights=True, # So we can have more patience and see if loss still goes down on validation set but return to optimal weights if it doesn't
-        min_delta=0.001 # delta is a small number for how much the loss has to go down by
-    )
+#     early_stopping = EarlyStopping(
+#         monitor='val_loss', 
+#         patience=15,
+#         restore_best_weights=True, # So we can have more patience and see if loss still goes down on validation set but return to optimal weights if it doesn't
+#         min_delta=0.001 # delta is a small number for how much the loss has to go down by
+#     )
     
-    history = vae.fit(
-        x=(x_train, time_train),
-        validation_data=(x_val, time_val),
-        epochs=200,
-        batch_size=2,  # Processing 2 samples per batch rn, might change later
-        callbacks=[early_stopping],
-        verbose=1
-    )
-    return vae, history
+#     history = vae.fit(
+#         x=(x_train, time_train),
+#         validation_data=(x_val, time_val),
+#         epochs=200,
+#         batch_size=2,  # Processing 2 samples per batch rn, might change later
+#         callbacks=[early_stopping],
+#         verbose=1
+#     )
+#     return vae, history
 
 def train_model(x_train, time_train, x_val, time_val, 
                num_features=201, target_rows=300, latent_dim=32,
@@ -399,17 +502,17 @@ def train_model(x_train, time_train, x_val, time_val,
         verbose=1 # Prints if lr is reduced
     )
     
-    # ChatGPT function for checking if data has right shape, figure out what it means later, too tired rn
-    def validate_shapes(data, name):
-        x, t = data
-        assert x.shape[1:] == (target_rows, num_features), \
-            f"{name} data shape mismatch"
-        assert t.shape == x.shape[:2], \
-            f"{name} timesteps shape mismatch"
+    # # ChatGPT function for checking if data has right shape, figure out what it means later, too tired rn
+    # def validate_shapes(data, name):
+    #     x, t = data
+    #     assert x.shape[1:] == (target_rows, num_features), \
+    #         f"{name} data shape mismatch"
+    #     assert t.shape == x.shape[:2], \
+    #         f"{name} timesteps shape mismatch"
     
-    # Checks shapes of training and validation data
-    validate_shapes((x_train, time_train), "Training")
-    validate_shapes((x_val, time_val), "Validation")
+    # # Checks shapes of training and validation data
+    # validate_shapes((x_train, time_train), "Training")
+    # validate_shapes((x_val, time_val), "Validation")
     
     # Start trainging model
     history = vae.fit(
@@ -431,10 +534,10 @@ def train_model(x_train, time_train, x_val, time_val,
 # Using model
 if __name__ == "__main__" and train_once:
     target_rows = 300
+    initial_lr = 1e-3
     # Quickly adding bullshit data to see if code is running or there are errors
-    num_samples = 10
-    x_train = tf.random.normal((num_samples, 300, 201))
-    time_train = tf.linspace(0., 1., num_samples)[:, None]  # Normalized 0-1
+    time_test = tf.convert_to_tensor(np.linspace(0, 1, target_rows))
+    time_val = time_test
 
     # Getting data filepaths
     feature_level_data_base_path = r"C:\Users\job\OneDrive - Delft University of Technology\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE_AE_DATA"
@@ -446,17 +549,21 @@ if __name__ == "__main__" and train_once:
     expected_cols = list(df_sample1.columns)
     expected_cols = expected_cols[1:]
     num_features = len(expected_cols)
+    print(f'num features: {num_features}')
 
     # Leave-one-out split
-    test_path = all_paths[2]
-    #val_path_idx = (i+5)%(int(n_filepaths))
-    val_path = all_paths[6]
-    #val_id = all_ids[val_path_idx]
-    train_paths = [p for j, p in enumerate(all_paths) if j != 2 and j!=6]
+    test_path = all_paths[0]
+    val_path = all_paths[1]
+    train_paths = [p for j, p in enumerate(all_paths) if j != 0 and j!=1]
+    n_train_samples = len(train_paths)
 
     # Load and flatten (merge) training data csv files, resampling to 300 rows
+    time_train = tf.convert_to_tensor(np.tile(np.linspace(0, 1, target_rows), n_train_samples))
+    time_train = tf.reshape(time_train, (n_train_samples, target_rows))
     vae_train_data, vae_scaler = VAE_merge_and_scale_data(train_paths, expected_cols, target_rows)
-    
+
+    vae_train_data_tensor = tf.convert_to_tensor(vae_train_data)
+    vae_train_data_tensor = tf.reshape(vae_train_data_tensor, (n_train_samples, target_rows, num_features))
 
     # Load expected colums of test data excluding time
     df_test = pd.read_csv(test_path).drop(columns=['Time (Cycle)'])
@@ -464,19 +571,24 @@ if __name__ == "__main__" and train_once:
     df_test = df_test[expected_cols]
     df_val = df_val[expected_cols]
 
+    test_data = resample_dataframe(df_test, target_rows)
+    val_data = resample_dataframe(df_val, target_rows)
 
-    
-    x_val = tf.random.normal((300, 201))
-    time_val = tf.convert_to_tensor(np.linspace(0,1,300))
+    print("Training data shape:", vae_train_data_tensor.shape)
+    print("Training time shape:", time_train.shape)
+    print("Validation data shape:", val_data.shape)
+    print("Validation time shape:", time_val.shape)
+    print(vae_train_data_tensor.shape[:2])
+    print(vae_train_data_tensor.shape[1:])
 
     model, history = train_model(
-        x_train, time_train, x_val, time_val,
-        num_features=201,
-        target_rows=300,
+        vae_train_data, time_train, val_data, time_val,
+        num_features=num_features,
+        target_rows=target_rows,
         latent_dim=32,
         dropout_rate=0.3,  # Slightly higher for small dataset
         l2_weight=1e-4,
-        initial_lr=1e-3)
+        initial_lr=initial_lr)
 
     # Plot training history
     plt.plot(history.history['health_mean'], label='Train Health')
@@ -514,6 +626,7 @@ tuner.search(
     callbacks=[tf.keras.callbacks.EarlyStopping(patience=5)]
 )
 
+''' NON REGULATED VAE MODEL'''
 
 class HealthIndicatorVAE(Model):
     def __init__(self, input_shape=(300, 201), latent_dim=32, feature_weights=None):
@@ -616,12 +729,34 @@ class HealthIndicatorVAE(Model):
     def trendability_loss(self, health, timesteps):
         """Encourage negative correlation with time"""
         # Compute correlation between health and timesteps
+        timesteps = tf.cast(timesteps, dtype=health.dtype)
         health_flat = tf.reshape(health, [-1])
         timesteps_flat = tf.reshape(timesteps, [-1])
+        # Compute means
+        mean_h = tf.reduce_mean(health_flat)
+        mean_t = tf.reduce_mean(timesteps_flat)
         
-        # Pearson correlation
-        correlation = tfp.stats.correlation(health_flat, timesteps_flat)
-        return tf.square(correlation + 1)  # Penalize if not perfectly negative correlation
+        # Compute covariance
+        cov = tf.reduce_mean((health - mean_h) * (timesteps - mean_t))
+        
+        # Compute standard deviations
+        std_h = tf.sqrt(tf.reduce_mean(tf.square(health - mean_h)))
+        std_t = tf.sqrt(tf.reduce_mean(tf.square(timesteps - mean_t)))
+        
+        # Compute correlation
+        correlation = cov / (std_h * std_t + 1e-9)  # Small epsilon to avoid division by zero
+        
+        # Clip to handle any numerical instability
+        correlation = tf.clip_by_value(correlation, -1.0, 1.0)
+
+        # """Encourage negative correlation with time"""
+        # # Compute correlation between health and timesteps
+        # health_flat = tf.reshape(health, [-1])
+        # timesteps_flat = tf.reshape(timesteps, [-1])
+        
+        # # Pearson correlation
+        # correlation = tfp.stats.correlation(health_flat, timesteps_flat)
+        return tf.square(correlation + 1) # penalizes non-negative correlation
     
     def train_step(self, data):
         x, timesteps = data  # Assuming you pass timesteps as secondary input
