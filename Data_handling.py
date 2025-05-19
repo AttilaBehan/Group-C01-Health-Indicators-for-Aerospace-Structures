@@ -4,6 +4,7 @@ import math
 import glob
 import os
 import zipfile
+import matplotlib.pyplot as plt
 
 re_losses = [
 0.3424, 0.1627, 0.1403, 0.1299, 0.1235, 0.1206, 0.1172, 0.1157, 0.1152, 0.1147,
@@ -42,3 +43,21 @@ val_losses = [
 ]
 
 print(len(val_losses))
+
+epochs = np.arange(1, 44, 1)
+
+plt.plot(epochs, val_losses, label='Validation Loss', color='r')
+plt.plot(epochs, train_losses, label='Training Loss', color='b')
+plt.xlabel('Epochs')
+plt.ylabel('Losses')
+plt.legend()
+plt.show()
+
+plt.plot(epochs, train_losses, label='Total Loss', color='b')
+plt.plot(epochs, re_losses, label='Reconstruction Loss', color='orange')
+plt.plot(epochs, kl_losses, label='KL Loss', color='purple')
+plt.plot(epochs, mo_losses, label='Monotonicity Loss', color='green')
+plt.xlabel('Epochs')
+plt.ylabel('Losses')
+plt.legend()
+plt.show()
