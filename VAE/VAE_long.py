@@ -7,7 +7,7 @@ import scipy.interpolate as interp
 from skopt import gp_minimize
 from skopt.space import Real, Integer
 from skopt.utils import use_named_args
-from Prog_crit import fitness, test_fitness, scale_exact
+from VAE.VAE_final.Prog_crit import fitness, test_fitness, scale_exact
 import os
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
