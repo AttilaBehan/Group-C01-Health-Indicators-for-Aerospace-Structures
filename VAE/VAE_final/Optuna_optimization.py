@@ -2,7 +2,7 @@ import optuna
 from Model_architecture import VAE_Seed()
 from Train import VAE_train()
 import numpy as np
-from Prognostic_criteria import fitness()
+from Prog_crit import fitness()
 
 
 def optimize_hyperparameters_optuna(
