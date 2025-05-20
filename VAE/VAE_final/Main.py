@@ -195,7 +195,7 @@ if __name__ == "__main__" and optimizing:
     while True:
         var = int(input("Select 1 to run Bayesian or 2 to run optuna optimization"))
         if var == 1:
-            VAE_optimize_hyperparameters(folder_store_hyperparameters, expected_cols, all_paths, n_calls_per_sample, target_rows, space)
+            VAE_optimize_hyperparameters(folder_store_hyperparameters, expected_cols, all_paths, n_calls_per_sample, target_rows, space, batch_size)
             break
         if var == 2:
             optimize_hyperparameters_optuna(folder_store_hyperparameters, expected_cols, all_paths, n_calls_per_sample, target_rows, num_features)
