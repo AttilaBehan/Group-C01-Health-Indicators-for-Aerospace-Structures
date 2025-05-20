@@ -1,3 +1,15 @@
+import numpy as np
+import tensorflow as tf
+import random
+import pandas as pd
+from Model_architecture import VAE_Seed, VAE
+from skopt import gp_minimize
+from functools import partial
+from skopt.space import Real, Integer
+import inspect
+from Main import VAE_objective_with_data
+from File_handling import VAE_merge_data_per_timestep_new, resample_dataframe
+
 def VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls, space):
     """
     Optimize VAE hyperparameters using gp_minimize, a Gaussian process-based minimization algorithm

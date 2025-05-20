@@ -1,3 +1,5 @@
+import tensorflow as tf
+
 ''' Computes total loss - combines Reconstruction, KL Divergence and Monotonicity losses'''
 def vae_loss(x, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff):
     # Make x and x_recon same float type
