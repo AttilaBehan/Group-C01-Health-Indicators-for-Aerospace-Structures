@@ -1,14 +1,14 @@
 import optuna
 from Model_architecture import VAE_Seed()
-from Train import VAE_train
+from Train import VAE_train()
 import numpy as np
-
+from Prognostic_criteria import fitness()
 
 
 def optimize_hyperparameters_optuna(
-    vae_train_data, vae_val_data, vae_test_data,
+    num_features, target_rows, vae_train_data, vae_val_data, vae_test_data,
     n_trials=40,
-    direction='minimize'
+    direction='minimize' , 
 ):
     """
     Optimize VAE hyperparameters using Optuna's TPE sampler and pruning.
@@ -28,13 +28,12 @@ def optimize_hyperparameters_optuna(
         batch_size = trial.suggest_int('batch_size',100,1000)
 
         # Train VAE with these params
-        hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(
+        hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(target_rows,
             vae_train_data, vae_val_data, vae_test_data,
             hidden_1, batch_size, learning_rate, epochs,
             reloss_coeff, klloss_coeff, moloss_coeff,
-            num_features=num_features, hidden_2=hidden_2,
-            target_rows=target_rows
-        )
+            num_features, hidden_2=hidden_2,
+            )
 
         # Compute fitness error on stacked health indicators
         hi_all = np.vstack((hi_train, hi_test, hi_val))

@@ -1,3 +1,9 @@
+from Model_architecture import VAE_Seed()
+import numpy as np
+import tensorflow as tf
+from Loss_function import vae_loss()
+from Main import compute_health_indicator()
+
 #@tf.function  # Decotator, Converts the Python function into a TensorFlow graph for faster execution
 
 def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coeff):
