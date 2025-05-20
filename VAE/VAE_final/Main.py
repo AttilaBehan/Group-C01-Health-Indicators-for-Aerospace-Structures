@@ -1,29 +1,23 @@
 import tensorflow as tf
 import pandas as pd
-import ast
-from time import time
 import numpy as np
 import scipy.interpolate as interp
 from skopt import gp_minimize
 from skopt.space import Real, Integer
 from skopt.utils import use_named_args
-from Prog_crit import fitness, test_fitness, scale_exact
+from Prog_crit import fitness, scale_exact
 from File_handling import VAE_merge_data_per_timestep, resample_dataframe
-from Train import train_step, VAE_train
+from Train import VAE_train
 from Bayesian_optimization import VAE_optimize_hyperparameters
+from Plot_function import plot_results
 from Model_architecture import VAE, VAE_Seed
-from 
 import os
-from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import random
 from tqdm import tqdm
-from functools import partial
 import glob
-import inspect
-import sys
 # from pathlib import Path
 
 # # Get the parent directory of the current file's directory
