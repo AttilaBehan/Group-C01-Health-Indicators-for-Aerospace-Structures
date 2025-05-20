@@ -10,6 +10,7 @@ from File_handling import VAE_merge_data_per_timestep, resample_dataframe
 from Train import VAE_train
 from Bayesian_optimization import VAE_optimize_hyperparameters
 from Plot_function import plot_results
+from Optuna_optimization import optimize_hyperparameters_optuna
 from Model_architecture import VAE, VAE_Seed
 import os
 from sklearn.preprocessing import StandardScaler
@@ -242,8 +243,14 @@ if __name__ == "__main__" and optimizing:
     # Use the decorator to automatically convert parameters proposed by optimizer to keyword arguments for objective funtion
     # [50, 8, 0.003, 550, 0.06, 1.6, 2.8] → hidden_1=50, batch_size=8, ...
     #@use_named_args(space)
-
-    VAE_optimize_hyperparameters(folder_store_hyperparameters, expected_cols, all_paths, n_calls_per_sample=n_calls_per_sample, target_rows=target_rows)
+    while True:
+        input("Select 1 to run Bayesian or 2 to run optuna optimization")
+        if input == 1:
+            VAE_optimize_hyperparameters(folder_store_hyperparameters, expected_cols, all_paths, n_calls_per_sample, target_rows, space)
+            break
+        if input == 2:
+            optimize_hyperparameters_optuna(folder_store_hyperparameters, expected_cols, all_paths, n_calls_per_sample, target_rows, num_features)
+            break
 
 
 
