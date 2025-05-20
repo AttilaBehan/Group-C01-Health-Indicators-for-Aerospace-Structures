@@ -1,8 +1,8 @@
 import optuna
-from Model_architecture import VAE_Seed()
-from Train import VAE_train()
+from Model_architecture import VAE_Seed
+from Train import VAE_train
 import numpy as np
-from Prog_crit import fitness()
+from Prog_crit import fitness
 import random
 from File_handling import VAE_merge_data_per_timestep,resample_dataframe
 import pandas as pd
