@@ -87,7 +87,7 @@ def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filep
     random.seed(VAE_Seed.vae_seed)
     tf.random.set_seed(VAE_Seed.vae_seed)
     np.random.seed(VAE_Seed.vae_seed)
-    
+    batch_size = batch_size
     # Declares these variables as global, a.k.a. the function will use and modify these global variables (Defined elsewhere)
     global vae_train_data, vae_val_data, vae_test_data, vae_scaler, file_type, panel, freq
 
@@ -169,7 +169,6 @@ def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filep
     df_out = pd.DataFrame(results, columns=["test_panel_id", "params", "error"])
     df_out.to_csv(os.path.join(folder_save_opt_param_csv, "hyperparameters-opt-samples.csv"))
     print(f"\n✅ Saved best parameters to {os.path.join(folder_save_opt_param_csv, 'hyperparameters-opt-samples.csv')}")
-
 def VAE_objective(params, batch_size):
     """
     Objective function for optimizing VAE hyperparameters.
@@ -200,7 +199,7 @@ def VAE_objective(params, batch_size):
         vae_train_data, vae_val_data, vae_test_data, 
         hidden_1, batch_size, learning_rate, epochs, 
         reloss_coeff, klloss_coeff, moloss_coeff, 
-        num_features, hidden_2, target_rows)
+        hidden_2, target_rows)
 
     # Stack train and test HIs
     hi_all = np.vstack((hi_train, hi_test, hi_val))
