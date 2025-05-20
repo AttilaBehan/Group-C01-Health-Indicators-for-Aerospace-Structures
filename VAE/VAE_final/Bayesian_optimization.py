@@ -1,13 +1,13 @@
 import numpy as np
 import tensorflow as tf
 import random
+import os
 import pandas as pd
 from Model_architecture import VAE_Seed, VAE
 from skopt import gp_minimize
 from functools import partial
 from skopt.space import Real, Integer
 import inspect
-from Main import VAE_objective_with_data
 from File_handling import VAE_merge_data_per_timestep, resample_dataframe
 
 def VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls, space):
@@ -168,3 +168,53 @@ def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filep
     df_out = pd.DataFrame(results, columns=["test_panel_id", "params", "error"])
     df_out.to_csv(os.path.join(folder_save_opt_param_csv, "hyperparameters-opt-samples.csv"))
     print(f"\n✅ Saved best parameters to {os.path.join(folder_save_opt_param_csv, 'hyperparameters-opt-samples.csv')}")
+
+    def VAE_objective(params, batch_size):
+    """
+    Objective function for optimizing VAE hyperparameters.
+
+    Parameters:
+        - params (list): List of hyperparameter values in the order:
+            [hidden_1, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff]
+
+    Returns:
+        - error (float): Error from fitness function (3 / fitness)
+    """
+
+    # Unpack parameters
+    hidden_1, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff = params
+
+    # Reproducibility
+    random.seed(VAE_Seed.vae_seed)
+    tf.random.set_seed(VAE_Seed.vae_seed)
+    np.random.seed(VAE_Seed.vae_seed)
+
+    # Print parameters being tested
+    print(
+        f"Trying parameters: hidden_1={hidden_1}, learning_rate={learning_rate}, "
+        f"epochs={epochs}, reloss_coeff={reloss_coeff}, klloss_coeff={klloss_coeff}, moloss_coeff={moloss_coeff}")
+
+    # Train VAE and obtain HIs for train and test data
+    hi_train, hi_test, hi_val, vae, epoch_losses, train_test_val_losses = VAE_train(
+        vae_train_data, vae_val_data, vae_test_data, 
+        hidden_1, batch_size, learning_rate, epochs, 
+        reloss_coeff, klloss_coeff, moloss_coeff, 
+        num_features, hidden_2, target_rows)
+
+    # Stack train and test HIs
+    hi_all = np.vstack((hi_train, hi_test, hi_val))
+
+    # Handle single-dimension case if necessary
+    if hi_test.shape[1] == 1:
+        hi_test = np.tile(hi_test, (1, -1))  
+
+    # Compute fitness
+    ftn, monotonicity, trendability, prognosability, error = fitness(hi_all)
+
+    # Output error value (3 / fitness)
+    print("Error: ", error)
+
+    return error
+
+def VAE_objective_with_data(params, vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq):
+    return VAE_objective(params, batch_size)
