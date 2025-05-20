@@ -4,7 +4,7 @@ import tensorflow as tf
 from Loss_function import vae_loss
 import random
 from Model_architecture import VAE
-import time
+from time import time
 import pandas as pd
 import ast
 import glob
@@ -86,7 +86,7 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
     epoch_losses = []
     for epoch in range(epochs):
         #print(f'Starting Train step {epoch}')
-        loss = train_step(vae, sample_data, optimizer, reloss_coeff, klloss_coeff, moloss_coeff)
+        loss = train_step(vae, sample_data, optimizer, reloss_coeff, klloss_coeff, moloss_coeff, target_rows, num_features)
         epoch_losses.append(loss.numpy())
         #print(f'Completed Train step {epoch}')
         
