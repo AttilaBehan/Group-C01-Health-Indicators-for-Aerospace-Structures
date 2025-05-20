@@ -2,7 +2,6 @@ from Model_architecture import VAE_Seed
 import numpy as np
 import tensorflow as tf
 from Loss_function import vae_loss
-from Main import compute_health_indicator
 import random
 from Model_architecture import VAE
 import time
