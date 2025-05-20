@@ -1,12 +1,19 @@
-from Model_architecture import VAE_Seed()
+from Model_architecture import VAE_Seed
 import numpy as np
 import tensorflow as tf
-from Loss_function import vae_loss()
-from Main import compute_health_indicator()
+from Loss_function import vae_loss
+from Main import compute_health_indicator
+import random
+from Model_architecture import VAE
+import time
+import pandas as pd
+import ast
+import glob
+from File_handling import resample_dataframe, VAE_merge_data_per_timestep
 
 #@tf.function  # Decotator, Converts the Python function into a TensorFlow graph for faster execution
-
-def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coeff):
+#note: added input of target_rows and num_features
+def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coeff,target_rows,num_features):
     """
         Training VAE step
     
@@ -24,7 +31,7 @@ def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coef
         # FWD pass: bathc_xs passed through VAE, VAE returns reconstructed input, latent distribution parameters, sampled latent vector (z)
         x_recon, mean, logvar, z = vae(batch_xs, training=True) # Training = true makes sure dropout layers are on
         # Computes HI from prev defined function
-        health = compute_health_indicator(batch_xs, x_recon, target_rows=target_rows, num_features=num_features) # output size = (batch_size, timesteps)
+        health = compute_health_indicator(batch_xs, x_recon, target_rows, num_features) # output size = (batch_size, timesteps)
         # Computes loss from prev defined function (output = scalar loss value, averaged over batch)
         loss = vae_loss(batch_xs, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
     # computes gradients of loss w.r.t. all trainable weights in VAE
@@ -86,39 +93,10 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
         
         if epoch % display == 0:
             print(f'Epoch {epoch}, Loss = {loss}')
-
-        # batch_losses = []
-        # for batch_xs in train_dataset:
-        #     loss = train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coeff)
-        #     batch_losses.append(loss.numpy())
-        # epoch_losses.append(np.mean(batch_losses))
-
-        # if epoch % display == 0:
-        #     print(f"Epoch {epoch}, Loss = {np.mean(batch_losses)}")
-
-        # Validation loss calculation
-        #print(f'Starting validation step for epoch {epoch}')
         x_recon_val, mean_val, logvar_val, z = vae(val_data, training=False)
         val_health = compute_health_indicator(val_data, x_recon_val, target_rows=target_rows, num_features=num_features)
         val_loss = vae_loss(val_data, x_recon_val, mean_val, logvar_val, val_health, reloss_coeff, klloss_coeff, moloss_coeff)
-
-
-        # val_losses = []
-        # for val_batch in val_dataset:
-        #     x_recon_val, mean_val, logvar_val, z = vae(val_batch, training=False)
-        #     val_health = compute_health_indicator(val_batch, x_recon_val, target_rows=batch_size, num_features=num_features)
-        #     if tf.size(val_health) > 0:  # skip empty returns if any
-        #         val_loss_batch = vae_loss(val_batch, x_recon_val, mean_val, logvar_val, val_health,
-        #                                   reloss_coeff, klloss_coeff, moloss_coeff)
-        #         val_losses.append(val_loss_batch.numpy())
-        # val_loss = np.mean(val_losses)
-        
-        # Old validation loss code
-        # x_recon_val, mean_val, logvar_val, z = vae(val_data, training=False)
-        # val_health = compute_health_indicator(val_data, x_recon_val, target_rows, num_features).numpy()
-        # val_loss = vae_loss(val_data, x_recon_val, mean_val, logvar_val, val_health,
-        #                     reloss_coeff, klloss_coeff, moloss_coeff).numpy()
-        
+      
         if val_loss < (best_val_loss - min_delta):
             best_val_loss = val_loss
             epochs_without_improvement = 0
@@ -131,22 +109,7 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
 
     print(f"Training finished!!! Time: {time() - begin_time:.2f} seconds")
 
-    # Evaluate trained model
-    
-    # Reconstructs test and train data using trained VAE
-    # x_recon_train, _, _, _ = vae(sample_data, training=False)
-    # x_recon_test, _, _, _ = vae(test_data, training=False)
-    # x_recon_val, _, _, _ = vae(val_data, training=False)
-
-    # # Computes HI for each sample
-    # hi_train = compute_health_indicator(sample_data, x_recon_train, target_rows, num_features).numpy() # Output shape = (num_train_samples, target_rows)
-    # hi_test = compute_health_indicator(test_data, x_recon_test, target_rows, num_features).numpy()
-    # hi_val = compute_health_indicator(val_data, x_recon_val, target_rows, num_features).numpy()
-
-    # Batch reconstructed data to compute HI for each sample
-    # x_recon_train = tf.data.Dataset.from_tensor_slices(x_recon_train).batch(batch_size, drop_remainder=True)
-    # x_recon_test = tf.data.Dataset.from_tensor_slices(x_recon_test).batch(batch_size, drop_remainder=True)
-    # x_recon_val = tf.data.Dataset.from_tensor_slices(x_recon_val).batch(batch_size, drop_remainder=True)
+   
     print(f'\n Exaluating trained VAE on validation set')
     val_losses = []
     hi_val = []
@@ -258,7 +221,7 @@ def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data,
         train_paths = [p for j, p in enumerate(all_paths) if j != i and j!=val_path_idx]
 
         # Load and flatten (merge) training data csv files, resampling to 12000 rows
-        vae_train_data, vae_scaler = VAE_merge_data_per_timestep_new(train_paths, expected_cols, target_rows)
+        vae_train_data, vae_scaler = VAE_merge_data_per_timestep(train_paths, expected_cols, target_rows)
 
         # Load expected colums of test data excluding time
         df_test = pd.read_csv(test_path).drop(columns=['Time (Cycle)'])
@@ -266,18 +229,6 @@ def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data,
         #expected_cols = ['Amplitude', 'Energy', 'Counts', 'Duration', 'RMS']
         df_test = df_test[expected_cols]
         df_val = df_val[expected_cols]
-
-        # df_test_resampled = pd.DataFrame()
-        # df_val_resampled = pd.DataFrame()
-        # for col in df_test.columns: # interpolates test data columns so they are sampe length as target rows of train data
-        #     original = df_test[col].values
-        #     og = df_val[col].values
-        #     x_original = np.linspace(0, 1, len(original))
-        #     x_target = np.linspace(0, 1, target_rows)
-        #     interpolated = np.interp(x_target, x_original, original)
-        #     interp = np.interp(x_target, x_original, og)
-        #     df_test_resampled[col] = interpolated
-        #     df_val_resampled[col] = interp
         
         df_test_resampled = resample_dataframe(df_test, target_rows)
         df_val_resampled = resample_dataframe(df_val, target_rows)
