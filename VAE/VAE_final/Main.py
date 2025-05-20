@@ -196,19 +196,6 @@ if __name__ == "__main__" and train_once:
     df_test = df_test[expected_cols]
     df_val = df_val[expected_cols]
 
-    # df_test_resampled = pd.DataFrame()
-    # df_val_resampled = pd.DataFrame()
-    # for col in df_test.columns: # interpolates test data columns so they are sampe length as target rows of train data
-    #     original = df_test[col].values
-    #     og = df_val[col].values
-    #     x_original = np.linspace(0, 1, len(original))
-    #     x_val_original = np.linspace(0,1,len(og))
-    #     x_target = np.linspace(0, 1, target_rows)
-    #     interpolated = np.interp(x_target, x_original, original)
-    #     interp = np.interp(x_target, x_val_original, og)
-    #     df_test_resampled[col] = interpolated
-    #     df_val_resampled[col] = interp
-
     df_test_resampled = resample_dataframe(df_test, target_rows)
     df_val_resampled = resample_dataframe(df_val, target_rows)
 
