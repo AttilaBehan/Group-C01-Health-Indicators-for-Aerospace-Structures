@@ -76,6 +76,7 @@ space = [
         Integer(70, 140, name='hidden_1'),
         Real(0.001, 0.01, name='learning_rate'),
         Integer(500, 1000, name='epochs'),
+        Integer(8, 32, name="hidden_2"),
         Real(0.05, 0.6, name='reloss_coeff'),
         Real(0.1, 1.0, name='klloss_coeff'),
         Real(2.6, 4, name='moloss_coeff')
