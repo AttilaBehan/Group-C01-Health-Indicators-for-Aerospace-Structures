@@ -8,7 +8,7 @@ from functools import partial
 from skopt.space import Real, Integer
 import inspect
 from Main import VAE_objective_with_data
-from File_handling import VAE_merge_data_per_timestep_new, resample_dataframe
+from File_handling import VAE_merge_data_per_timestep, resample_dataframe
 
 def VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls, space):
     """
