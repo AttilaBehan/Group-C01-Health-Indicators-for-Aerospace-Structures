@@ -217,5 +217,5 @@ def VAE_objective(params, batch_size):
 
     return error
 
-def VAE_objective_with_data(params, vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq):
+def VAE_objective_with_data(params, batch_size, vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq):
     return VAE_objective(params, batch_size)
