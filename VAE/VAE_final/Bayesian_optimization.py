@@ -78,14 +78,17 @@ def VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data,
     
     ''' Uses VAE_hyperparameter_optimization() in loop using LOOCV'''
 
-def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filepaths, n_calls_per_sample=40, target_rows=300):
+def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filepaths, n_calls_per_sample, target_rows, space):
     """
     Run leave-one-out cross-validation on 12 samples to optimize VAE hyperparameters.
     Saves the best set of hyperparameters per test sample in a CSV.
     """
-
+    random.seed(VAE_Seed.vae_seed)
+    tf.random.set_seed(VAE_Seed.vae_seed)
+    np.random.seed(VAE_Seed.vae_seed)
+    
     # Declares these variables as global, a.k.a. the function will use and modify these global variables (Defined elsewhere)
-    global vae_train_data, vae_val_data, vae_test_data, vae_scaler, file_type, panel, freq, vae_seed
+    global vae_train_data, vae_val_data, vae_test_data, vae_scaler, file_type, panel, freq
 
     # Converts csv_dir into an absolute path — ensures reliable file handling regardless of how the path was passed in.
     #csv_dir = os.path.abspath(csv_dir)
@@ -116,7 +119,7 @@ def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filep
         train_paths = [p for j, p in enumerate(all_paths) if j != i and j!=val_path_idx]
 
         # Load and flatten (merge) training data csv files, resampling to 12000 rows
-        vae_train_data, vae_scaler = VAE_merge_data_per_timestep_new(train_paths, expected_cols, target_rows)
+        vae_train_data, vae_scaler = VAE_merge_data_per_timestep(train_paths, expected_cols, target_rows)
 
         # Load expected colums of test data excluding time
         df_test = pd.read_csv(test_path).drop(columns=['Time (Cycle)'])
