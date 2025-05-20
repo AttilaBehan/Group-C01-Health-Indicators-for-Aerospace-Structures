@@ -1,3 +1,5 @@
+import matplotlib.pyplot as plt
+
 ''' PLOTS GRAPH OF HI's vs % OF LIFETIME FOR DIFFERENT TEST SAMPLES'''
 def plot_HI_graph(HI_all, dataset_name, sp_method_name, folder_output, show_plot=True, n_plot_rows=4, n_plot_col=3):
     ''' Takes data from array HI_all, which contains stacked arrays of HI vs lifetime for samples
