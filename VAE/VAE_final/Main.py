@@ -31,7 +31,7 @@ tf.random.set_seed(VAE_Seed.vae_seed)
 np.random.seed(VAE_Seed.vae_seed)
 
 # Training_data_folder
-train_paths_folder = r"C:\Users\job\OneDrive - Delft University of Technology\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE_AE_DATA"
+train_paths_folder = r"VAE_AE_DATA"
 # Get a list of CSV file paths in the folder
 train_paths = glob.glob(train_paths_folder + "/*.csv")
 
@@ -99,7 +99,7 @@ if __name__ == "__main__" and train_once:
 
     #expected_cols = ['Amplitude_Time: Mean','Amplitude_Time: Standard Deviation','Amplitude_Time: Root Amplitude','Amplitude_Time: Root Mean Square','Amplitude_Time: Root Sum of Squares','Amplitude_Time: Peak','Amplitude_Time: Skewness','Amplitude_Time: Kurtosis','Amplitude_Time: Crest factor','Amplitude_Time: Clearance factor','Amplitude_Time: Shape factor','Amplitude_Time: Impulse factor','Amplitude_Time: Maximum to minimum difference','Amplitude_Time: FM4','Amplitude_Time: Median','Energy_Time: Mean','Energy_Time: Standard Deviation','Energy_Time: Root Amplitude','Energy_Time: Root Mean Square','Energy_Time: Root Sum of Squares','Energy_Time: Peak','Energy_Time: Skewness','Energy_Time: Kurtosis','Energy_Time: Crest factor','Energy_Time: Clearance factor','Energy_Time: Shape factor','Energy_Time: Impulse factor','Energy_Time: Maximum to minimum difference','Energy_Time: Median']
     #expected_cols_freq = ['Energy_Freq: Mean Frequency','Energy_Freq: f2','Energy_Freq: f3','Energy_Freq: f4','Energy_Freq: f5','Energy_Freq: f6','Energy_Freq: f7','Energy_Freq: f8','Energy_Freq: f9','Energy_Freq: f10','Energy_Freq: f11','Energy_Freq: f12','Energy_Freq: f13','Energy_Freq: f14','Energy_Physics: Cumulative energy']
-    feature_level_data_base_path = r"C:\Users\job\OneDrive - Delft University of Technology\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE_AE_DATA"
+    feature_level_data_base_path = r"VAE_AE_DATA"
     all_paths = glob.glob(feature_level_data_base_path + "/*.csv")
     n_filepaths = len(all_paths)
 
@@ -145,7 +145,7 @@ if __name__ == "__main__" and train_once:
     # print(f'\n HI_val shape: {hi_val.shape}, \n HI_val: {hi_val}')
 
     # Plot HI graph
-    filepath = r"C:\Users\job\Downloads\Test_HI_graph.png"
+    filepath = r"Test_HI_graph.png"
     colors = ['b', 'r', 'g', 'c', 'm', 'y', 'orange', 'purple', 'brown', 'pink', 'gray', 'lime', 'violet', 'yellow']
     x = np.linspace(0,100,target_rows)
     plt.plot(x, hi_train[0].reshape(-1,1), color='r', label='Sample 1')
@@ -166,12 +166,12 @@ if __name__ == "__main__" and train_once:
 '''ATTEMPTING TO IMPLEMENT OPTIMIZATION'''
 optimizing = False
 if __name__ == "__main__" and optimizing:
-    folder_store_hyperparameters = r"C:\Users\job\Downloads\Low_Features"
+    folder_store_hyperparameters = r"VAE_AE_DATA"
 
     target_rows = 300
     batch_size = 300
     n_calls_per_sample = 12
-    feature_level_data_base_path = r"C:\Users\job\OneDrive - Delft University of Technology\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE_AE_DATA"
+    feature_level_data_base_path = r"VAE_AE_DATA"
     all_paths = glob.glob(feature_level_data_base_path + "/*.csv")
     n_filepaths = len(all_paths)
 
@@ -206,7 +206,7 @@ if __name__ == "__main__" and optimizing:
 ''' CHECK THIS OUT LATER'''
 code_og = False
 if __name__ == "__main__" and code_og:
-    base_path = "C:/Users/AJEBr/OneDrive/Documents/Aerospace/BsC year 2/VAE_Project/VAE_AE_DATA"
+    base_path = "VAE_AE_DATA"
     sample_ids = [f"Sample{i}Interp.csv" for i in range(1, 13)]
     sample_paths = [os.path.join(base_path, sid) for sid in sample_ids]
 
