@@ -84,7 +84,7 @@ space = [
 # Use the decorator to automatically convert parameters to keyword arguments
 # @use_named_args(space) # converts positional arguments to keyword arguments
 
-train_once = True
+train_once = False
 if __name__ == "__main__" and train_once:
     # Variables:
     target_rows=300
@@ -164,7 +164,7 @@ if __name__ == "__main__" and train_once:
     plt.show()
 
 '''ATTEMPTING TO IMPLEMENT OPTIMIZATION'''
-optimizing = False
+optimizing = True
 if __name__ == "__main__" and optimizing:
     folder_store_hyperparameters = r"VAE_AE_DATA"
 
@@ -193,11 +193,11 @@ if __name__ == "__main__" and optimizing:
     # [50, 8, 0.003, 550, 0.06, 1.6, 2.8] → hidden_1=50, batch_size=8, ...
     #@use_named_args(space)
     while True:
-        input("Select 1 to run Bayesian or 2 to run optuna optimization")
-        if input == 1:
+        var = int(input("Select 1 to run Bayesian or 2 to run optuna optimization"))
+        if var == 1:
             VAE_optimize_hyperparameters(folder_store_hyperparameters, expected_cols, all_paths, n_calls_per_sample, target_rows, space)
             break
-        if input == 2:
+        if var == 2:
             optimize_hyperparameters_optuna(folder_store_hyperparameters, expected_cols, all_paths, n_calls_per_sample, target_rows, num_features)
             break
 
