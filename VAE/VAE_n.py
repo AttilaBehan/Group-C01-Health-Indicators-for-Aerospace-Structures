@@ -8,6 +8,7 @@ from skopt import gp_minimize
 from skopt.space import Real, Integer
 from skopt.utils import use_named_args
 from Prog_crit import fitness, test_fitness, scale_exact
+from File_handling import VAE_merge_data_per_timestep, resample_dataframe
 import os
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
@@ -45,19 +46,6 @@ expected_cols = expected_cols[1:]
 
 target_rows = 300
 
-''' Resampling test and validation data'''
-def resample_dataframe(df, target_rows):
-    """Resample each column in a DataFrame to target number of rows."""
-    resampled_data = {}
-    for col in df.columns:
-        original = df[col].values
-        x_original = np.linspace(0, 1, len(original))
-        x_target = np.linspace(0, 1, target_rows)
-        interpolated = np.interp(x_target, x_original, original)
-        resampled_data[col] = interpolated
-    return pd.DataFrame(resampled_data)
-
-
 ''' STRUCTURE OF THE CODE:
 
     1. Functions defined: 
@@ -80,135 +68,6 @@ def resample_dataframe(df, target_rows):
 target_rows = 300
 num_features=201
 hidden_2 = 10
-def VAE_merge_data_per_timestep(sample_filenames, expected_cols, target_rows=300):
-    """
-    Purpose: Load multiple AE data files, resample each to have target_rows rows via interpolation, 
-             standardize individually, flatten them, and stack together.
-
-    Load and flatten AE data from each sample. Interpolates each feature column to `target_rows`,
-    then flattens in time-preserving order (row-major) to maintain temporal context.
-    Returns a 2D array: shape = (n_samples, target_rows × 5)
-    """
-    rows = []
-    #expected_cols = ['Amplitude', 'Energy', 'Counts', 'Duration', 'RMS']
-    expected_length = target_rows * len(expected_cols)
-
-    for path in sample_filenames:
-        print(f"Reading and resampling: {os.path.basename(path)}")
-        try:
-            df = pd.read_csv(path)
-        except FileNotFoundError:
-            raise FileNotFoundError(f"File not found: {path}")
-        except pd.errors.EmptyDataError:
-            raise ValueError(f"File is empty: {path}")
-        
-        print("  → Columns found:", df.columns.tolist())
-
-        if 'Time' in df.columns:
-            df = df.drop(columns=['Time'])
-        if 'Unnamed: 0' in df.columns:
-            df = df.drop(columns=['Unnamed: 0'])
-
-        missing = [col for col in expected_cols if col not in df.columns]
-        if missing:
-            raise ValueError(f"{os.path.basename(path)} is missing required columns: {missing}")
-        df = df[expected_cols]
-
-        df_resampled = pd.DataFrame()
-        for col in df.columns:
-            original = df[col].values
-            x_original = np.linspace(0, 1, len(original))
-            x_target = np.linspace(0, 1, target_rows)
-            interpolated = np.interp(x_target, x_original, original)
-            df_resampled[col] = interpolated
-        
-        # Standardize feature-wise for this sample
-        scaler = StandardScaler()
-        df_resampled[expected_cols] = scaler.fit_transform(df_resampled[expected_cols])
-
-        flattened = df_resampled.values.flatten(order='C') 
-        # [[1,2],
-        #  [3,4]] -> [1,2,3,4]
-
-
-        print(f"  → Flattened shape: {flattened.shape[0]}")
-        if flattened.shape[0] != expected_length:
-            raise ValueError(
-                f"ERROR: {os.path.basename(path)} vector has {flattened.shape[0]} values (expected {expected_length})"
-            )
-
-        rows.append(flattened) 
-
-    print("✅ All sample vectors have consistent shape. Proceeding to stack.")
-
-    # Returns stack of for each sample one row containing flattened matrix of features vs time, row wise flattening
-    return np.vstack(rows) # shape = (n_samples, target_rows × n_features)
-
-''' ALTERNATIVE WAY OF MERGING TRAINING DATA'''
-# Lower dimensionality, easier scaling, better fro tabular VAE's
-
-def VAE_merge_data_per_timestep_new(sample_filenames, expected_cols, target_rows):
-    """
-    Load multiple AE data files, resample each to have target_rows rows via interpolation.
-    Combine all resampled data into a single dataframe: one row per time step.
-    Shape: (n_samples * target_rows, n_features)
-    """
-    all_data = []
-
-    for path in sample_filenames:
-        print(f"Reading and resampling: {os.path.basename(path)}")
-
-        df = pd.read_csv(path)
-
-        # Column cleanup
-        cols_to_drop = ['Time (Cycle)', 'Unnamed: 0', 'Time']  # Combine checks
-        df = df.drop(columns=[col for col in cols_to_drop if col in df.columns])
-
-        # if 'Time' in df.columns:
-        #     df = df.drop(columns=['Time (Cycle)'])
-        # if 'Unnamed: 0' in df.columns:
-        #     df = df.drop(columns=['Unnamed: 0'])
-
-        missing = [col for col in expected_cols if col not in df.columns]
-        if missing:
-            raise ValueError(f"{os.path.basename(path)} missing columns: {missing}")
-        df = df[expected_cols]
-
-        # Resample each feature independently
-        df_resampled = resample_dataframe(df, target_rows)
-
-        # df_resampled = pd.DataFrame()
-        # for col in df.columns:
-        #     original = df[col].values
-        #     x_original = np.linspace(0, 1, len(original))
-        #     x_target = np.linspace(0, 1, target_rows)
-        #     interpolated = np.interp(x_target, x_original, original)
-        #     df_resampled[col] = interpolated
-
-        all_data.append(df_resampled)
-
-    # Stack time steps from all samples
-    data = np.vstack(all_data)  # shape = (12 * target_rows, n_features)
-    print(f"✅ Merged data shape: {data.shape}")
-
-    # Standardize feature-wise (column-wise)
-    scaler = StandardScaler()
-    data_scaled = scaler.fit_transform(data)
-    print(f"✅ Data standardized, mean: {data_scaled.mean(axis=0)}, std: {data_scaled.std(axis=0)}")
-
-    return data_scaled, scaler
-
-''' Resampling test and validation data'''
-def resample_dataframe(df, target_rows):
-    """Resample each column in a DataFrame to target number of rows."""
-    resampled_data = {}
-    for col in df.columns:
-        original = df[col].values
-        x_original = np.linspace(0, 1, len(original))
-        x_target = np.linspace(0, 1, target_rows)
-        interpolated = np.interp(x_target, x_original, original)
-        resampled_data[col] = interpolated
-    return pd.DataFrame(resampled_data)
 
 ''' VAE Model:'''
 
