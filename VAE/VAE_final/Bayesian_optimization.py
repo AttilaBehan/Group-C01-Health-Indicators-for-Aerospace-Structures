@@ -78,7 +78,7 @@ def VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data,
     
     ''' Uses VAE_hyperparameter_optimization() in loop using LOOCV'''
 
-def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filepaths, n_calls_per_sample, target_rows, space):
+def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filepaths, n_calls_per_sample, target_rows, space, batch_size):
     """
     Run leave-one-out cross-validation on 12 samples to optimize VAE hyperparameters.
     Saves the best set of hyperparameters per test sample in a CSV.
