@@ -85,7 +85,7 @@ space = [
 # Use the decorator to automatically convert parameters to keyword arguments
 # @use_named_args(space) # converts positional arguments to keyword arguments
 
-train_once = False
+train_once = True
 if __name__ == "__main__" and train_once:
     # Variables:
     target_rows=300
@@ -165,7 +165,7 @@ if __name__ == "__main__" and train_once:
     plt.show()
 
 '''ATTEMPTING TO IMPLEMENT OPTIMIZATION'''
-optimizing = True
+optimizing = False
 if __name__ == "__main__" and optimizing:
     folder_store_hyperparameters = r"VAE_AE_DATA"
 

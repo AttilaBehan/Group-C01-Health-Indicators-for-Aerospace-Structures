@@ -86,7 +86,7 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
     epoch_losses = []
     for epoch in range(epochs):
         #print(f'Starting Train step {epoch}')
-        loss = train_step(vae, sample_data, optimizer, reloss_coeff, klloss_coeff, moloss_coeff, target_rows, num_features)
+        loss = train_step(vae, train_dataset, optimizer, reloss_coeff, klloss_coeff, moloss_coeff, target_rows, num_features)
         epoch_losses.append(loss.numpy())
         #print(f'Completed Train step {epoch}')
         
@@ -212,7 +212,7 @@ def VAE_print_progress(res):
     print(f"\n Current iteration in hyperparameter optimization process: \n Call number: {n_calls}")
 
     ''' TRAINS VAE USING HYPERPARAMETERS WITH LOWEST ERROR'''
-def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data, vae_val_data, vae_test_data, expected_cols, target_rows, num_features, hidden_2=10):
+def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data, vae_val_data, vae_test_data, expected_cols, target_rows, num_features, hidden_2):
     # Load hyperparameters
     df = pd.read_csv(opt_hyperparam_filepath)
     columns=["test_panel_id", "params", "error"]
