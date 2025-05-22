@@ -85,7 +85,7 @@ space = [
 # Use the decorator to automatically convert parameters to keyword arguments
 # @use_named_args(space) # converts positional arguments to keyword arguments
 
-train_once = False
+train_once = True
 if __name__ == "__main__" and train_once:
     # Variables:
     target_rows=300
@@ -93,7 +93,7 @@ if __name__ == "__main__" and train_once:
     batch_size = 300
     learning_rate = 0.005
     epochs = 550
-    hidden_2 = 10
+    hidden_2 = 1
     reloss_coeff = 0.075
     klloss_coeff = 1.6
     moloss_coeff = 2.8
@@ -135,7 +135,7 @@ if __name__ == "__main__" and train_once:
     vae_val_data = vae_scaler.transform(vae_val_data)
 
     # Train model
-    hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(vae_train_data, vae_val_data, vae_test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=10, target_rows=target_rows)
+    hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(vae_train_data, vae_val_data, vae_test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2, target_rows)
     
     hi_train = hi_train.reshape(-1, target_rows)
 
@@ -165,7 +165,7 @@ if __name__ == "__main__" and train_once:
     plt.show()
 
 '''ATTEMPTING TO IMPLEMENT OPTIMIZATION'''
-optimizing = True
+optimizing = False
 if __name__ == "__main__" and optimizing:
     folder_store_hyperparameters = r"VAE_AE_DATA"
 
