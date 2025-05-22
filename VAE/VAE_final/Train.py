@@ -212,7 +212,7 @@ def VAE_print_progress(res):
     print(f"\n Current iteration in hyperparameter optimization process: \n Call number: {n_calls}")
 
     ''' TRAINS VAE USING HYPERPARAMETERS WITH LOWEST ERROR'''
-def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data, vae_val_data, vae_test_data, expected_cols, target_rows, num_features, hidden_2=10):
+def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data, vae_val_data, vae_test_data, expected_cols, target_rows, num_features, hidden_2):
     # Load hyperparameters
     df = pd.read_csv(opt_hyperparam_filepath)
     columns=["test_panel_id", "params", "error"]

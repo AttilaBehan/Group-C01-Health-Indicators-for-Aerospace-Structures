@@ -29,7 +29,7 @@ tf.random.set_seed(VAE_Seed.vae_seed)
 np.random.seed(VAE_Seed.vae_seed)
 
 # Training_data_folder
-train_paths_folder = r"C:\Users\naomi\OneDrive\Documents\VS.ADSEE\Statistical_Features_CSV"
+train_paths_folder = r"C:\Users\job\OneDrive - Delft University of Technology\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE\VAE_final\VAE_AE_DATA"
 # Get a list of CSV file paths in the folder
 train_paths = glob.glob(train_paths_folder + "/*.csv")
 
@@ -1295,7 +1295,7 @@ if __name__ == "__main__" and train_once:
 
     #expected_cols = ['Amplitude_Time: Mean','Amplitude_Time: Standard Deviation','Amplitude_Time: Root Amplitude','Amplitude_Time: Root Mean Square','Amplitude_Time: Root Sum of Squares','Amplitude_Time: Peak','Amplitude_Time: Skewness','Amplitude_Time: Kurtosis','Amplitude_Time: Crest factor','Amplitude_Time: Clearance factor','Amplitude_Time: Shape factor','Amplitude_Time: Impulse factor','Amplitude_Time: Maximum to minimum difference','Amplitude_Time: FM4','Amplitude_Time: Median','Energy_Time: Mean','Energy_Time: Standard Deviation','Energy_Time: Root Amplitude','Energy_Time: Root Mean Square','Energy_Time: Root Sum of Squares','Energy_Time: Peak','Energy_Time: Skewness','Energy_Time: Kurtosis','Energy_Time: Crest factor','Energy_Time: Clearance factor','Energy_Time: Shape factor','Energy_Time: Impulse factor','Energy_Time: Maximum to minimum difference','Energy_Time: Median']
     #expected_cols_freq = ['Energy_Freq: Mean Frequency','Energy_Freq: f2','Energy_Freq: f3','Energy_Freq: f4','Energy_Freq: f5','Energy_Freq: f6','Energy_Freq: f7','Energy_Freq: f8','Energy_Freq: f9','Energy_Freq: f10','Energy_Freq: f11','Energy_Freq: f12','Energy_Freq: f13','Energy_Freq: f14','Energy_Physics: Cumulative energy']
-    feature_level_data_base_path = r"C:\Users\naomi\OneDrive\Documents\Low_Features\Statistical_Features_CSV"
+    feature_level_data_base_path = r"C:\Users\job\OneDrive - Delft University of Technology\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE\VAE_final\VAE_AE_DATA"
     all_paths = glob.glob(feature_level_data_base_path + "/*.csv")
     n_filepaths = len(all_paths)
 
@@ -1385,7 +1385,7 @@ if __name__ == "__main__" and train_once:
     # print(f'\n HI_val shape: {hi_val.shape}, \n HI_val: {hi_val}')
 
     # Plot HI graph
-    filepath = r"C:\Users\naomi\OneDrive\Documents\Low_Features\Test_HI_graph.png"
+    filepath = r"C:\Users\job\Downloads\Test_HI_graph.png"
     colors = ['b', 'r', 'g', 'c', 'm', 'y', 'orange', 'purple', 'brown', 'pink', 'gray', 'lime', 'violet', 'yellow']
     x = np.linspace(0,100,x_range)
     plt.plot(x, hi_train[0].reshape(-1,1), color='r', label='Sample 1')
@@ -1404,7 +1404,7 @@ if __name__ == "__main__" and train_once:
     plt.show()
 
     # Create grid of subplots
-    filepath = r"C:\Users\naomi\OneDrive\Documents\Low_Features\Test_HI_graph_all_samples.png"
+    filepath = r"C:\Users\job\Downloads\Test_HI_graph_all_samples.png"
     fig, axes = plt.subplots(3, 4, figsize=(12, 9))
 
     # Flatten the axes array for simple iteration
@@ -1437,7 +1437,7 @@ if __name__ == "__main__" and optimizing:
     target_rows = 300
     batch_size = 300
     n_calls_per_sample = 12
-    feature_level_data_base_path = r"C:\Users\naomi\OneDrive\Documents\Low_Features\Statistical_Features_CSV"
+    feature_level_data_base_path = r"C:\Users\job\OneDrive - Delft University of Technology\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE\VAE_final\VAE_AE_DATA"
     all_paths = glob.glob(feature_level_data_base_path + "/*.csv")
     n_filepaths = len(all_paths)
 

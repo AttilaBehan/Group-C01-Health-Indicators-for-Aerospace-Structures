@@ -10,8 +10,9 @@ from skopt.space import Real, Integer
 import inspect
 from File_handling import VAE_merge_data_per_timestep, resample_dataframe
 from Train import VAE_train
+from Prognostic_criteria import fitness
 
-def VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls, space):
+def VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls, space, batch_size, target_rows):
     """
     Optimize VAE hyperparameters using gp_minimize, a Gaussian process-based minimization algorithm
 
@@ -43,7 +44,9 @@ def VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data,
         vae_test_data=vae_test_data,
         file_type=file_type,
         panel=panel,
-        freq=freq
+        freq=freq,
+        target_rows=target_rows,
+        batch_size=batch_size
     )
 
     try:
@@ -158,18 +161,21 @@ def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filep
         print("VAE_hyperparameter_optimisation signature:", inspect.signature(VAE_hyperparameter_optimisation))
 
         # Optimize - Runs optimization funtion to tune hyperparameters over 'n_calls_per_sample' trials
-        best_params, best_error = VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls_per_sample, space)
+        best_params, best_errors = VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls_per_sample, space, batch_size, target_rows)
         # best_params = opt_hyperparameters[0]
         # best_error = opt_hyperparameters[1]
 
         # Stores tuple of: test_id, hyperparametes, and error in results list
-        results.append((test_id, best_params, best_error)) 
+        results.append((test_id, best_params, best_errors)) 
 
     # Save results in df (save list of tuples in df with 3 cols) -> save df to csv file
     df_out = pd.DataFrame(results, columns=["test_panel_id", "params", "error"])
     df_out.to_csv(os.path.join(folder_save_opt_param_csv, "hyperparameters-opt-samples.csv"))
     print(f"\n✅ Saved best parameters to {os.path.join(folder_save_opt_param_csv, 'hyperparameters-opt-samples.csv')}")
-def VAE_objective(params, batch_size):
+    return best_params
+
+
+def VAE_objective(params, batch_size, target_rows):
     """
     Objective function for optimizing VAE hyperparameters.
 
@@ -182,7 +188,7 @@ def VAE_objective(params, batch_size):
     """
 
     # Unpack parameters
-    hidden_1, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff = params
+    hidden_1, learning_rate, epochs, hidden_2, reloss_coeff, klloss_coeff, moloss_coeff = params
 
     # Reproducibility
     random.seed(VAE_Seed.vae_seed)
@@ -192,7 +198,7 @@ def VAE_objective(params, batch_size):
     # Print parameters being tested
     print(
         f"Trying parameters: hidden_1={hidden_1}, learning_rate={learning_rate}, "
-        f"epochs={epochs}, reloss_coeff={reloss_coeff}, klloss_coeff={klloss_coeff}, moloss_coeff={moloss_coeff}")
+        f"epochs={epochs}, reloss_coeff={reloss_coeff}, klloss_coeff={klloss_coeff}, moloss_coeff={moloss_coeff}, hidden_2 = {hidden_2}")
 
     # Train VAE and obtain HIs for train and test data
     hi_train, hi_test, hi_val, vae, epoch_losses, train_test_val_losses = VAE_train(
@@ -216,5 +222,5 @@ def VAE_objective(params, batch_size):
 
     return error
 
-def VAE_objective_with_data(params, batch_size, vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq):
-    return VAE_objective(params, batch_size)
+def VAE_objective_with_data(params, batch_size, vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, target_rows):
+    return VAE_objective(params, batch_size, target_rows)

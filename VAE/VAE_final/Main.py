@@ -1,6 +1,8 @@
 import tensorflow as tf
 import pandas as pd
 import numpy as np
+import ast
+import re
 import scipy.interpolate as interp
 from skopt import gp_minimize
 from skopt.space import Real, Integer
@@ -88,15 +90,16 @@ space = [
 train_once = False
 if __name__ == "__main__" and train_once:
     # Variables:
-    target_rows=300
-    hidden_1 = 50
-    batch_size = 300
-    learning_rate = 0.005
-    epochs = 550
-    hidden_2 = 10
-    reloss_coeff = 0.075
-    klloss_coeff = 1.6
-    moloss_coeff = 2.8
+    target_rows=200
+    hidden_1 = 138
+    hidden_2 = 1
+    batch_size = 15
+    learning_rate = 0.006463308229180164
+    epochs = 638
+    reloss_coeff = 0.14089681648465138
+    klloss_coeff = 0.11407276606707455
+    moloss_coeff = 3.1927620729889177
+    timesteps_per_batch = 10
 
     #expected_cols = ['Amplitude_Time: Mean','Amplitude_Time: Standard Deviation','Amplitude_Time: Root Amplitude','Amplitude_Time: Root Mean Square','Amplitude_Time: Root Sum of Squares','Amplitude_Time: Peak','Amplitude_Time: Skewness','Amplitude_Time: Kurtosis','Amplitude_Time: Crest factor','Amplitude_Time: Clearance factor','Amplitude_Time: Shape factor','Amplitude_Time: Impulse factor','Amplitude_Time: Maximum to minimum difference','Amplitude_Time: FM4','Amplitude_Time: Median','Energy_Time: Mean','Energy_Time: Standard Deviation','Energy_Time: Root Amplitude','Energy_Time: Root Mean Square','Energy_Time: Root Sum of Squares','Energy_Time: Peak','Energy_Time: Skewness','Energy_Time: Kurtosis','Energy_Time: Crest factor','Energy_Time: Clearance factor','Energy_Time: Shape factor','Energy_Time: Impulse factor','Energy_Time: Maximum to minimum difference','Energy_Time: Median']
     #expected_cols_freq = ['Energy_Freq: Mean Frequency','Energy_Freq: f2','Energy_Freq: f3','Energy_Freq: f4','Energy_Freq: f5','Energy_Freq: f6','Energy_Freq: f7','Energy_Freq: f8','Energy_Freq: f9','Energy_Freq: f10','Energy_Freq: f11','Energy_Freq: f12','Energy_Freq: f13','Energy_Freq: f14','Energy_Physics: Cumulative energy']
@@ -135,7 +138,7 @@ if __name__ == "__main__" and train_once:
     vae_val_data = vae_scaler.transform(vae_val_data)
 
     # Train model
-    hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(vae_train_data, vae_val_data, vae_test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=10, target_rows=target_rows)
+    hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(vae_train_data, vae_val_data, vae_test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2, target_rows)
     
     hi_train = hi_train.reshape(-1, target_rows)
 
@@ -167,9 +170,9 @@ if __name__ == "__main__" and train_once:
 '''ATTEMPTING TO IMPLEMENT OPTIMIZATION'''
 optimizing = True
 if __name__ == "__main__" and optimizing:
-    folder_store_hyperparameters = r"VAE_AE_DATA"
+    folder_store_hyperparameters = os.path.dirname(os.path.abspath(__file__))
 
-    target_rows = 300
+    target_rows = 201
     batch_size = 300
     n_calls_per_sample = 12
     feature_level_data_base_path = r"VAE_AE_DATA"
@@ -189,11 +192,10 @@ if __name__ == "__main__" and optimizing:
     #     Real(1.4, 1.8, name='klloss_coeff'),
     #     Real(2.6, 3, name='moloss_coeff')
     # ]
-
     # Use the decorator to automatically convert parameters proposed by optimizer to keyword arguments for objective funtion
     # [50, 8, 0.003, 550, 0.06, 1.6, 2.8] → hidden_1=50, batch_size=8, ...
     #@use_named_args(space)
-    while True:
+    while False:
         var = int(input("Select 1 to run Bayesian or 2 to run optuna optimization"))
         if var == 1:
             VAE_optimize_hyperparameters(folder_store_hyperparameters, expected_cols, all_paths, n_calls_per_sample, target_rows, space, batch_size)
@@ -201,8 +203,54 @@ if __name__ == "__main__" and optimizing:
         if var == 2:
             optimize_hyperparameters_optuna(folder_store_hyperparameters, expected_cols, all_paths, n_calls_per_sample, target_rows, num_features)
             break
+    csv_data = pd.read_csv(os.path.join(os.path.dirname(os.path.abspath(__file__)),'hyperparameters-opt-samples.csv'))
+    # Loop through each test sample
+    for index, row in csv_data.iterrows():
+        params_str = row['params']
+        # Replace np.int64(x) or np.float64(x) with x
+        clean_params_str = re.sub(r'np\.(int64|float64)\((-?\d+\.?\d*)\)', r'\2', params_str)
+        # Parse the cleaned string
+        params = ast.literal_eval(clean_params_str)
 
+        hidden_1 = params[0]
+        learning_rate = params[1]
+        epochs = params[2]
+        hidden_2 = params[3]
+        reloss_coeff = params[4]
+        klloss_coeff = params[5]
+        moloss_coeff = params[6]
+        panel = index  # Legacy naming
+        freq = None
+        file_type = None
 
+        # Leave-one-out split
+        test_path = all_paths[index]
+        val_path_idx = (index+5)%(int(n_filepaths))
+        val_path = all_paths[val_path_idx]
+        val_id = [f"Sample{i}" for i in range(1, int(n_filepaths+1))][val_path_idx]
+        train_paths = [p for j, p in enumerate(all_paths) if j != index and j!=val_path_idx]
+
+        # Load and flatten (merge) training data csv files, resampling to 12000 rows
+        vae_train_data, vae_scaler = VAE_merge_data_per_timestep(train_paths, expected_cols, target_rows)
+
+        # Load expected colums of test data excluding time
+        df_test = pd.read_csv(test_path).drop(columns=['Time (Cycle)'])
+        df_val = pd.read_csv(val_path).drop(columns='Time (Cycle)')
+        #expected_cols = ['Amplitude', 'Energy', 'Counts', 'Duration', 'RMS']
+        df_test = df_test[expected_cols]
+        df_val = df_val[expected_cols]
+        # Resample both DataFrames using function
+        df_test_resampled = resample_dataframe(df_test, target_rows)
+        df_val_resampled = resample_dataframe(df_val, target_rows)
+
+        # If using old MERGE_DATA - Row major order flattening into 1D array (Row1, Row2, Row3... successive), then reshapes to go from one row to one column
+        vae_test_data = df_test_resampled.values
+        vae_val_data = df_val_resampled.values
+
+        # Standardize val and test data
+        vae_test_data = vae_scaler.transform(vae_test_data)
+        vae_val_data = vae_scaler.transform(vae_val_data)
+        hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(vae_train_data, vae_val_data, vae_test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, hidden_2, target_rows)
 
 ''' CHECK THIS OUT LATER'''
 code_og = False
@@ -216,7 +264,7 @@ if __name__ == "__main__" and code_og:
     all_data_scaled = scaler.transform(all_data).astype(np.float32)
 
     hidden_1 = 50
-    batch_size = 5
+    batch_size = 300
     learning_rate = 0.0055
     epochs = 550
     reloss_coeff = 0.075
