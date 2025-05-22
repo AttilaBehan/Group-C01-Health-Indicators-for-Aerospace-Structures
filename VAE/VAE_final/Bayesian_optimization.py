@@ -12,7 +12,7 @@ from File_handling import VAE_merge_data_per_timestep, resample_dataframe
 from Train import VAE_train
 from Prognostic_criteria import fitness
 
-def VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls, space, batch_size):
+def VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls, space, batch_size, target_rows):
     """
     Optimize VAE hyperparameters using gp_minimize, a Gaussian process-based minimization algorithm
 
@@ -45,6 +45,7 @@ def VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data,
         file_type=file_type,
         panel=panel,
         freq=freq,
+        target_rows=target_rows,
         batch_size=batch_size
     )
 
@@ -160,7 +161,7 @@ def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filep
         print("VAE_hyperparameter_optimisation signature:", inspect.signature(VAE_hyperparameter_optimisation))
 
         # Optimize - Runs optimization funtion to tune hyperparameters over 'n_calls_per_sample' trials
-        best_params, best_errors = VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls_per_sample, space, batch_size)
+        best_params, best_errors = VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls_per_sample, space, batch_size, target_rows)
         # best_params = opt_hyperparameters[0]
         # best_error = opt_hyperparameters[1]
 
@@ -171,7 +172,7 @@ def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filep
     df_out = pd.DataFrame(results, columns=["test_panel_id", "params", "error"])
     df_out.to_csv(os.path.join(folder_save_opt_param_csv, "hyperparameters-opt-samples.csv"))
     print(f"\n✅ Saved best parameters to {os.path.join(folder_save_opt_param_csv, 'hyperparameters-opt-samples.csv')}")
-def VAE_objective(params, batch_size):
+def VAE_objective(params, batch_size, target_rows):
     """
     Objective function for optimizing VAE hyperparameters.
 
@@ -218,5 +219,5 @@ def VAE_objective(params, batch_size):
 
     return error
 
-def VAE_objective_with_data(params, batch_size, vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq):
-    return VAE_objective(params, batch_size)
+def VAE_objective_with_data(params, batch_size, vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, target_rows):
+    return VAE_objective(params, batch_size, target_rows)
