@@ -183,6 +183,8 @@ if __name__ == "__main__" and optimizing:
     expected_cols = list(df_sample1.columns)
     expected_cols = expected_cols[1:]
     num_features = len(expected_cols)
+    Training_his = []
+    Testing_his = []
     # Define space over which hyperparameter optimization will be performed (hyperparameter range and name set)
     # space = [
     #     Integer(40, 60, name='hidden_1'),
@@ -251,6 +253,7 @@ if __name__ == "__main__" and optimizing:
         vae_test_data = vae_scaler.transform(vae_test_data)
         vae_val_data = vae_scaler.transform(vae_val_data)
         hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(vae_train_data, vae_val_data, vae_test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, hidden_2, target_rows)
+
 
 ''' CHECK THIS OUT LATER'''
 code_og = False
