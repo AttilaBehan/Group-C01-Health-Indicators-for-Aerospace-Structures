@@ -10,8 +10,9 @@ from skopt.space import Real, Integer
 import inspect
 from File_handling import VAE_merge_data_per_timestep, resample_dataframe
 from Train import VAE_train
+from Prognostic_criteria import fitness
 
-def VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls, space):
+def VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls, space, batch_size):
     """
     Optimize VAE hyperparameters using gp_minimize, a Gaussian process-based minimization algorithm
 
@@ -43,7 +44,8 @@ def VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data,
         vae_test_data=vae_test_data,
         file_type=file_type,
         panel=panel,
-        freq=freq
+        freq=freq,
+        batch_size=batch_size
     )
 
     try:
@@ -158,7 +160,7 @@ def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filep
         print("VAE_hyperparameter_optimisation signature:", inspect.signature(VAE_hyperparameter_optimisation))
 
         # Optimize - Runs optimization funtion to tune hyperparameters over 'n_calls_per_sample' trials
-        best_params, best_errors = VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls_per_sample, space)
+        best_params, best_errors = VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls_per_sample, space, batch_size)
         # best_params = opt_hyperparameters[0]
         # best_error = opt_hyperparameters[1]
 
