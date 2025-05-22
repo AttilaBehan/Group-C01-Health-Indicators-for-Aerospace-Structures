@@ -60,8 +60,8 @@ target_rows = 300
 
 # VAE merge data function and inputs for current dataset:
 target_rows = 300
-num_features=84
-hidden_2 = 8
+num_features=14
+hidden_2 = 64
 
 ''' Resampling test and validation data'''
 def resample_dataframe(df, target_rows):
@@ -167,7 +167,12 @@ def VAE_merge_data_per_timestep_new(sample_filenames, expected_cols, target_rows
             raise ValueError(f"{os.path.basename(path)} missing columns: {missing}")
         df = df[expected_cols]
 
-        df_freq = df.loc[:, df.columns.str.contains('Freq')]
+        include = ['Amplitude_Freq']
+        exclude = ['Rise', 'Energy', 'Duration', 'RMS', 'Count']
+
+        pattern = f"({'|'.join(include)})(?!.*({'|'.join(exclude)}))"
+
+        df_freq = df.loc[:, df.columns.str.contains(pattern, regex=True)]
         df_resampled = resample_dataframe(df_freq, target_rows)
 
         # # Resample each feature independently
@@ -228,9 +233,9 @@ def create_batches_from_arrays_list(array_list, timesteps, batch_size, shuffle=F
 # Defines Keras VAE model
 class VAE(tf.keras.Model):
     # Contructor method which initializes VAE, hidden_2 = size of latent space, usually smaller than hidden_1
-    def __init__(self, timesteps_per_batch, n_features, hidden_1, hidden_2=8):
+    def __init__(self, timesteps_per_batch, n_features, hidden_1, hidden_2=64, dropout_rate=0.2, **kwargs):
         # Calls parent class constructor to initialize model properly
-        super(VAE, self).__init__()
+        super(VAE, self).__init__(**kwargs)  # Pass kwargs to parent
 
         # Storing model parameters
         self.timesteps = timesteps_per_batch
@@ -262,21 +267,39 @@ class VAE(tf.keras.Model):
         self.encoder = tf.keras.Sequential([
             tf.keras.layers.InputLayer(shape=(timesteps_per_batch, n_features)),
             # LSTM processes sequences and returns last output
-            tf.keras.layers.LSTM(hidden_1, activation='tanh', kernel_initializer=initializer),
+            tf.keras.layers.LSTM(hidden_1, activation='tanh', kernel_initializer=initializer, return_sequences=True),
+            tf.keras.layers.Dropout(dropout_rate),  # <-- HERE
+            tf.keras.layers.LSTM(hidden_1//2, activation='tanh'),  # Reduced dim
             # Output mean and log-variance of latent space
             tf.keras.layers.Dense(hidden_2 * 2, kernel_initializer=initializer),
         ])
 
-        # ===== DECODER (LSTM for reconstruction) =====
+        # # ===== DECODER (LSTM for reconstruction) =====
+        # self.decoder = tf.keras.Sequential([
+        #     tf.keras.layers.InputLayer(shape=(hidden_2,)),
+        #     # Expand latent vector to LSTM input size
+        #     tf.keras.layers.Dense(hidden_1, activation='relu', kernel_initializer=initializer),
+        #     # Reshape to (batch, timesteps, hidden_1) for LSTM
+        #     tf.keras.layers.RepeatVector(timesteps_per_batch),  # Repeats z `timesteps` times
+        #     # LSTM reconstructs sequences
+        #     tf.keras.layers.LSTM(n_features, activation='tanh', kernel_initializer=initializer, return_sequences=True),
+        #     # No need for Flatten since output is (batch, timesteps, n_features)
+        # ])
         self.decoder = tf.keras.Sequential([
             tf.keras.layers.InputLayer(shape=(hidden_2,)),
-            # Expand latent vector to LSTM input size
-            tf.keras.layers.Dense(hidden_1, activation='relu', kernel_initializer=initializer),
-            # Reshape to (batch, timesteps, hidden_1) for LSTM
-            tf.keras.layers.RepeatVector(timesteps_per_batch),  # Repeats z `timesteps` times
-            # LSTM reconstructs sequences
-            tf.keras.layers.LSTM(n_features, activation='tanh', kernel_initializer=initializer, return_sequences=True),
-            # No need for Flatten since output is (batch, timesteps, n_features)
+            # Project to intermediate dimension
+            tf.keras.layers.Dense(hidden_1 * 2, activation='tanh'),
+            tf.keras.layers.Dropout(0.2),
+            # Project back to original LSTM dim
+            tf.keras.layers.Dense(hidden_1),
+            # Sequence reconstruction
+            tf.keras.layers.RepeatVector(timesteps_per_batch),
+            # Stacked LSTMs for better sequence modeling
+            tf.keras.layers.LSTM(hidden_1, return_sequences=True),
+            tf.keras.layers.LSTM(n_features, return_sequences=True),
+            # Properly scaled output
+            tf.keras.layers.TimeDistributed(
+                tf.keras.layers.Dense(n_features, activation='linear')),
         ])
 
     # Encoding method
@@ -304,6 +327,40 @@ class VAE(tf.keras.Model):
         x_recon = self.decode(z) # Decoding
         #print("Recon shape:", x_recon.shape)  # Should be (batch_size, 10, 84)
         return x_recon, mean, logvar, z # Returning reconstructed input, latent distribution parametyers, sampled latent variable
+    
+    def get_config(self):
+        config = super(VAE, self).get_config()  # Get parent config
+        config.update({
+            'timesteps_per_batch': self.timesteps,
+            'n_features': self.n_features,
+            'hidden_1': self.hidden_1,
+            'hidden_2': self.hidden_2
+        })
+        return config
+    
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
+    
+def load_trained_vae(model_path, timesteps_per_batch=None, n_features=None, hidden_1=None):
+    dummy_model = VAE(
+        timesteps_per_batch=timesteps_per_batch,
+        n_features=n_features,
+        hidden_1=hidden_1
+    )
+    
+    custom_objects = {
+        'VAE': VAE,
+        'vae_loss': vae_loss,  # Include any custom loss functions
+        'compute_health_indicator': compute_health_indicator  # Include any custom metrics
+    }
+    # with tf.keras.utils.custom_object_scope({'VAE': VAE}):
+    loaded_vae = tf.keras.models.load_model(
+        model_path, 
+        custom_objects=custom_objects,
+        compile=False
+    )
+    return loaded_vae
 
 ''' HI calculator based on reconstruction errors, 
 
@@ -331,7 +388,7 @@ def compute_health_indicator(x, x_recon, k=1.0, target_rows=300, num_features=20
     #     health = tf.exp(-k*errors)
     #     #print('health shape:',health.shape)
     x = tf.cast(x, tf.float32)
-    errors = tf.reduce_mean(tf.square(x - x_recon), axis=[1,2])
+    errors = tf.reduce_mean(tf.square(x - x_recon), axis=2)
     health = tf.exp(-k*errors)
     #print('health shape:',health.shape)
     return health
@@ -359,16 +416,19 @@ def vae_loss(x, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, molos
     #     fealoss = tf.reduce_sum(tf.nn.relu(-diffs)) # sums all penalties across batches and timesteps
     #     print(f'reloss shape: {reloss.shape} \t klloss shape: {klloss.shape} \t fealoss shape: {fealoss.shape}')
     #     loss = tf.reduce_mean(reloss_coeff * reloss + klloss_coeff * klloss + moloss_coeff * fealoss) # weighted sum of losses, averaged over the batch
-    reloss = tf.reduce_sum(tf.square(x_recon - x), axis=[1,2]) # Sums squared errors across features for each sample in batch, output shape = (bathc_size,)
+    reloss = tf.reduce_mean(tf.square(x_recon - x)) # Sums squared errors across features for each sample in batch, output shape = (bathc_size,)
     # Term inside reduce_sum is KL divergence between N(mu, var) and N(0,1), axis=1 sums KL terms across latent dimensions for each sample, output shape = (batch_size,)
-    klloss = -0.5 * tf.reduce_sum(1 + logvar - tf.square(mean) - tf.exp(logvar), axis=1) # Regularizes the latent space to follow a standard normal distribution N(0, I).
+    klloss = -0.5 * tf.reduce_mean(1 + logvar - tf.square(mean) - tf.exp(logvar)) # Regularizes the latent space to follow a standard normal distribution N(0, I).
     # Computes health change in time: health[t]-health[t-1] (output shape = (batch_size, timesteps-1))
-    diffs = health[1:] - health[:-1]
+    diffs = health[:,1:] - health[:,:-1]
     # tf.nn.relu(-diffs) returns non-zero value of change if health decreases
-    fealoss = tf.reduce_sum(tf.nn.relu(-diffs)) # sums all penalties across batches and timesteps
+    fealoss = tf.reduce_mean(tf.nn.relu(-diffs)) # sums all penalties across batches and timesteps
     #print(f'reloss shape: {reloss.shape} \t klloss shape: {klloss.shape} \t fealoss shape: {fealoss.shape}')
-    loss = tf.reduce_mean(reloss_coeff * reloss + klloss_coeff * klloss + moloss_coeff * fealoss) # weighted sum of losses, averaged over the batch
-    return loss
+    #reloss = tf.reduce_mean(reloss)
+    #klloss = tf.reduce_mean(klloss)
+    loss = reloss_coeff * reloss + klloss_coeff * klloss + moloss_coeff * fealoss
+    #loss = tf.reduce_mean(reloss_coeff * reloss + klloss_coeff * klloss + moloss_coeff * fealoss) # weighted sum of losses, averaged over the batch
+    return loss, reloss, klloss, fealoss
 
 #@tf.function  # Decotator, Converts the Python function into a TensorFlow graph for faster execution
 
@@ -392,7 +452,7 @@ def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coef
         # Computes HI from prev defined function
         health = compute_health_indicator(batch_xs, x_recon, target_rows=target_rows, num_features=num_features) # output size = (batch_size, timesteps)
         # Computes loss from prev defined function (output = scalar loss value, averaged over batch)
-        loss = vae_loss(batch_xs, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
+        loss, reloss, klloss, fealoss = vae_loss(batch_xs, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
     # computes gradients of loss w.r.t. all trainable weights in VAE
     gradients = tape.gradient(loss, vae.trainable_variables) # Returns list of gradients (one per layer/variable)
     # Weight update using gradients (zip(gradients, trainable_variables) pairs grads with weights and optimizer applies rule)
@@ -400,7 +460,7 @@ def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coef
     return loss
 
 ''' Apply the train_step() function to train the VAE'''
-def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=8, target_rows=300, patience=50, min_delta=1e-4, timesteps_per_batch=10):
+def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=64, target_rows=300, patience=50, min_delta=1e-4, timesteps_per_batch=10, model_save_path='vae_model.weights.keras', final_model_save_path='full_vae_model.keras'):
     """
         Trains VAE on sample_data with inbuilt early stopping when validation diverges, then evaluates VAE on test_data
     
@@ -421,10 +481,17 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
 
     # Initialize Model and Training Settings
     #n_input = sample_data.shape[1] # input dimension (e.g. target_rows*num_col)
-    display = 10 # display loss every 50 epochs
+    display = 2 # display loss every 50 epochs
+
+    # Clear existing models
+    tf.keras.backend.clear_session()
 
     # Initialize VAE model
     vae = VAE(timesteps_per_batch, num_features, hidden_1, hidden_2)
+
+    # Debug: Check initial weights
+    initial_weights = [w.numpy().copy() for w in vae.weights]
+    print("Model initialized")
 
     # Adam optimizer
     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
@@ -454,23 +521,45 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
     epoch_losses = []
     for epoch in range(epochs):
         batch_losses = []
+        relosses = []
+        kllosses = []
+        fealosses = []
         # for batch_data in train_dataset:
         for batch_num, batch_data in enumerate(train_dataset):
             #print(f'batch_data: {batch_data} \n batch_data shape: {batch_data.shape}')
             with tf.GradientTape() as tape:
                 # FWD pass: bathc_xs passed through VAE, VAE returns reconstructed input, latent distribution parameters, sampled latent vector (z)
                 x_recon, mean, logvar, z = vae(batch_data, training=True) # Training = true makes sure dropout layers are on, x_recon shape = (batch_size, timestamps_per_batch, n_features)
+                #print("Latent space samples:", z[:5])
+
+                # Debug: Check latent space
+                if epoch == 0 and batch_num == 0:
+                    print("Initial latent sample:", z[0].numpy())
+
                 # Computes HI from prev defined function
                 health = compute_health_indicator(batch_data, x_recon, target_rows=timesteps_per_batch, num_features=num_features) # output size = (batch_size, timesteps)
                 #print(f'health for batch in training {health}')
+
+                # Debug: Check health indicator
+                if epoch % 10 == 0 and batch_num == 0:
+                    print(f"Epoch {epoch} HI stats - min: {tf.reduce_min(health):.3f}, "
+                        f"max: {tf.reduce_max(health):.3f}, mean: {tf.reduce_mean(health):.3f}")
+                
                 # Computes loss from prev defined function (output = scalar loss value, averaged over batch)
-                loss = vae_loss(batch_data, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
+                loss, reloss, klloss, fealoss = vae_loss(batch_data, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
             # computes gradients of loss w.r.t. all trainable weights in VAE
             gradients = tape.gradient(loss, vae.trainable_variables) # Returns list of gradients (one per layer/variable)
+            # Debug: Check gradients
+            if epoch % 10 == 0 and batch_num == 0:
+                grad_norms = [tf.norm(g).numpy() for g in gradients]
+                print(f"Gradient norms: {grad_norms}")
             # Weight update using gradients (zip(gradients, trainable_variables) pairs grads with weights and optimizer applies rule)
             optimizer.apply_gradients(zip(gradients, vae.trainable_variables))
 
             batch_losses.append(loss.numpy())
+            relosses.append(reloss.numpy())
+            kllosses.append(klloss.numpy())
+            fealosses.append(fealoss.numpy())
             #print(f'Training loss of batch {batch_num + 1} computed')
             if (batch_num+1) >= num_batches:  # Explicit stop after all batches have been seen
                 break
@@ -478,50 +567,101 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
         # All batched done, append results
         epoch_losses.append(np.mean(batch_losses))
         if epoch % display == 0:
-            print(f'Epoch {epoch}, Loss = {np.mean(batch_losses)}')
+            print(f'Epoch {epoch}, \t Loss = {np.mean(batch_losses)}, \t RE loss = {np.mean(relosses)}, \t KL loss = {np.mean(kllosses)}, \t MO loss = {np.mean(fealosses)}')
 
-        # Validation 
-        val_batch_losses = []
-        for val_batch_num, val_batch in enumerate(val_dataset):
-            with tf.GradientTape() as tape:
-                # FWD pass: bathc_xs passed through VAE, VAE returns reconstructed input, latent distribution parameters, sampled latent vector (z)
-                x_recon, mean, logvar, z = vae(val_batch, training=False) # Training = true makes sure dropout layers are off
-                # Computes HI from prev defined function
-                #print(f'val_batch shape = {val_batch.shape} \n reconstructed batch shape {x_recon.shape}')
-                health = compute_health_indicator(val_batch, x_recon, target_rows=timesteps_per_batch, num_features=num_features) # output size = (batch_size, timesteps)
-                #print(f'validation health for batch {health}')
-                # Computes loss from prev defined function (output = scalar loss value, averaged over batch)
-                loss = vae_loss(val_batch, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
-            val_batch_losses.append(loss.numpy())
-            #print(f'Val loss of batch {val_batch_num + 1} computed')
-            if (val_batch_num+1) >= num_val_batches:  # Explicit stop after all batches have been seen
-                break
-        
-        epoch_val_loss = np.mean(val_batch_losses)
-        if epoch_val_loss < best_val_loss + min_delta:
-            best_val_loss = epoch_val_loss
-            epochs_without_improvement = 0
-        else:
-            epochs_without_improvement += 1
-        
-        if epochs_without_improvement > patience:
-            print(f"Early stopping at epoch {epoch} (Val loss no improvement for {patience} epochs)")
-            break
+        # Save model
+        with tf.keras.utils.custom_object_scope({'VAE': VAE}):
+            vae.save(final_model_save_path)
+        #print(f"New best model saved to {final_model_save_path}")
 
+        # # Validation 
+        # val_batch_losses = []
+        # for val_batch_num, val_batch in enumerate(val_dataset):
+        #     with tf.GradientTape() as tape:
+        #         # FWD pass: bathc_xs passed through VAE, VAE returns reconstructed input, latent distribution parameters, sampled latent vector (z)
+        #         x_recon, mean, logvar, z = vae(val_batch, training=False) # Training = true makes sure dropout layers are off
+        #         # Computes HI from prev defined function
+        #         #print(f'val_batch shape = {val_batch.shape} \n reconstructed batch shape {x_recon.shape}')
+        #         health = compute_health_indicator(val_batch, x_recon, target_rows=timesteps_per_batch, num_features=num_features) # output size = (batch_size, timesteps)
+        #         #print(f'validation health for batch {health}')
+        #         # Computes loss from prev defined function (output = scalar loss value, averaged over batch)
+        #         loss, reloss, klloss, fealoss = vae_loss(val_batch, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
+        #     val_batch_losses.append(loss.numpy())
+        #     #print(f'Val loss of batch {val_batch_num + 1} computed')
+        #     if (val_batch_num+1) >= num_val_batches:  # Explicit stop after all batches have been seen
+        #         break
+        
+        # epoch_val_loss = np.mean(val_batch_losses)
+        # if epoch_val_loss < best_val_loss + min_delta:
+        #     best_val_loss = epoch_val_loss
+        #     epochs_without_improvement = 0
+        #     # # Save best model
+        #     # vae.save_weights(model_save_path)
+        #     # print(f"New best model saved to {model_save_path} (val loss: {epoch_val_loss:.3f})")
+        # else:
+        #     epochs_without_improvement += 1
+        #     if epochs_without_improvement > patience:
+        #         print(f"Early stopping at epoch {epoch} (Val loss no improvement for {patience} epochs)")
+        #         break
+
+    # Load best model weights with verification
+    try:
+        vae.load_weights(model_save_path)
+        print(f"Successfully loaded weights from {model_save_path}")
+    except Exception as e:
+        print(f"Error loading weights: {str(e)}")
+        print("Using final epoch weights instead")
+
+    # Verification of model changes
+    final_weights = [w.numpy().copy() for w in vae.weights]
+    weight_changes = [not np.allclose(init, final) for init, final in zip(initial_weights, final_weights)]
+    print(f"Weights changed during training: {sum(weight_changes)}/{len(weight_changes)} layers")
+
+    for init_w, final_w, layer in zip(initial_weights, final_weights, vae.layers):
+        change = np.mean(np.abs(init_w - final_w))
+        print(f"{layer.name:20} | Avg weight change: {change:.6f} | Shape: {init_w.shape}")
+    
     print(f"Training finished!!! Time: {time() - begin_time:.2f} seconds")
 
+    #vae.save('full_vae_model.h5')  # Or .keras for newer TF versions
+    with tf.keras.utils.custom_object_scope({'VAE': VAE}):
+        vae.save(final_model_save_path)  # Saves everything
+
+
+    return vae, epoch_losses
+
+def evaluate_trained_VAE(hidden_1, hidden_2, vae_model_save_path, train_dataset, val_dataset, test_dataset, timesteps_per_batch, num_features, reloss_coeff, klloss_coeff, moloss_coeff):
     print(f'\n Evaluating trained VAE...')
+
+    # Count how many batches you have
+    num_batches = sum(1 for _ in train_dataset)
+    print(f"Total batches: {num_batches}")
+    num_val_batches = sum(1 for _ in val_dataset)
+    print(f"Total validation batches: {num_val_batches}")
+    num_test_batches = sum(1 for _ in test_dataset)
+    print(f"Total test batches: {num_test_batches}")
+
+    # Load model
+    loaded_vae = load_trained_vae(
+        vae_model_save_path, 
+        timesteps_per_batch=timesteps_per_batch, 
+        n_features=num_features, 
+        hidden_1=hidden_1
+    )
+    #vae = VAE(timesteps_per_batch, num_features, hidden_1, hidden_2)  # Recreate architecture
+    #vae.load_weights('vae_model.weights.h5')
 
     test_batch_losses = []
     test_health_flat_lst = []
     for test_batch_num, test_batch in enumerate(test_dataset):
-        with tf.GradientTape() as tape:
-            # FWD pass: bathc_xs passed through VAE, VAE returns reconstructed input, latent distribution parameters, sampled latent vector (z)
-            x_recon, mean, logvar, z = vae(test_batch, training=False) # Training = true makes sure dropout layers are off
-            # Computes HI from prev defined function
-            health = compute_health_indicator(test_batch, x_recon, target_rows=timesteps_per_batch, num_features=num_features) # output size = (batch_size, timesteps)
-            # Computes loss from prev defined function (output = scalar loss value, averaged over batch)
-            loss = vae_loss(test_batch, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
+        # FWD pass: bathc_xs passed through VAE, VAE returns reconstructed input, latent distribution parameters, sampled latent vector (z)
+        x_recon, mean, logvar, z = loaded_vae(test_batch, training=False) # Training = true makes sure dropout layers are off
+        #print("Latent space samples test:", z[:5])
+        # Computes HI from prev defined function
+        health = compute_health_indicator(test_batch, x_recon, target_rows=timesteps_per_batch, num_features=num_features) # output size = (batch_size, timesteps)
+        # Computes loss from prev defined function (output = scalar loss value, averaged over batch)
+        loss, reloss, klloss, fealoss = vae_loss(test_batch, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
+        health = tf.reduce_mean(health, axis=1)
         test_health_flat_lst.append(health.numpy())
         test_batch_losses.append(loss.numpy())
         if (test_batch_num+1) >= num_test_batches:  # Explicit stop after all batches have been seen
@@ -531,13 +671,14 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
     val_batch_losses = []
     val_health_flat_lst = []
     for val_batch_num, val_batch in enumerate(val_dataset):
-        with tf.GradientTape() as tape:
-            # FWD pass: bathc_xs passed through VAE, VAE returns reconstructed input, latent distribution parameters, sampled latent vector (z)
-            x_recon, mean, logvar, z = vae(val_batch, training=False) # Training = true makes sure dropout layers are off
-            # Computes HI from prev defined function
-            health = compute_health_indicator(val_batch, x_recon, target_rows=timesteps_per_batch, num_features=num_features) # output size = (batch_size, timesteps)
-            # Computes loss from prev defined function (output = scalar loss value, averaged over batch)
-            loss = vae_loss(val_batch, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
+        # FWD pass: bathc_xs passed through VAE, VAE returns reconstructed input, latent distribution parameters, sampled latent vector (z)
+        x_recon, mean, logvar, z = loaded_vae(val_batch, training=False) # Training = true makes sure dropout layers are off
+        #print("Latent space samples val:", z[:5])
+        # Computes HI from prev defined function
+        health = compute_health_indicator(val_batch, x_recon, target_rows=timesteps_per_batch, num_features=num_features) # output size = (batch_size, timesteps)
+        # Computes loss from prev defined function (output = scalar loss value, averaged over batch)
+        loss, reloss, klloss, fealoss = vae_loss(val_batch, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
+        health = tf.reduce_mean(health, axis=1)
         val_health_flat_lst.append(health.numpy())
         val_batch_losses.append(loss.numpy())
         if (val_batch_num+1) >= num_val_batches:  # Explicit stop after all batches have been seen
@@ -546,13 +687,14 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
     train_batch_losses = []
     train_health_flat_lst = []
     for batch_num, batch_data in enumerate(train_dataset):
-        with tf.GradientTape() as tape:
-            # FWD pass: bathc_xs passed through VAE, VAE returns reconstructed input, latent distribution parameters, sampled latent vector (z)
-            x_recon, mean, logvar, z = vae(batch_data, training=True) # Training = true makes sure dropout layers are on, x_recon shape = (batch_size, timestamps_per_batch, n_features)
-            # Computes HI from prev defined function
-            health = compute_health_indicator(batch_data, x_recon, target_rows=timesteps_per_batch, num_features=num_features) # output size = (batch_size, timesteps)
-            # Computes loss from prev defined function (output = scalar loss value, averaged over batch)
-            loss = vae_loss(batch_data, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
+        # FWD pass: bathc_xs passed through VAE, VAE returns reconstructed input, latent distribution parameters, sampled latent vector (z)
+        x_recon, mean, logvar, z = loaded_vae(batch_data, training=False) # Training = true makes sure dropout layers are on, x_recon shape = (batch_size, timestamps_per_batch, n_features)
+        #print("Latent space samples train:", z[:5])
+        # Computes HI from prev defined function
+        health = compute_health_indicator(batch_data, x_recon, target_rows=timesteps_per_batch, num_features=num_features) # output size = (batch_size, timesteps)
+        # Computes loss from prev defined function (output = scalar loss value, averaged over batch)
+        loss, reloss, klloss, fealoss = vae_loss(batch_data, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
+        health = tf.reduce_mean(health, axis=1)
         train_health_flat_lst.append(health.numpy())
         train_batch_losses.append(loss.numpy())
         if (batch_num+1) >= num_batches:  # Explicit stop after all batches have been seen
@@ -573,132 +715,8 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
 
     losses = [train_loss, test_loss, val_loss]
 
+    return losses, hi_train, hi_test, hi_val
 
-    #     #print(f'Starting Train step {epoch}')
-    #     loss = train_step(vae, sample_data, optimizer, reloss_coeff, klloss_coeff, moloss_coeff)
-    #     epoch_losses.append(loss.numpy())
-    #     #print(f'Completed Train step {epoch}')
-        
-    #     if epoch % display == 0:
-    #         print(f'Epoch {epoch}, Loss = {loss}')
-
-    #     # batch_losses = []
-    #     # for batch_xs in train_dataset:
-    #     #     loss = train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coeff)
-    #     #     batch_losses.append(loss.numpy())
-    #     # epoch_losses.append(np.mean(batch_losses))
-
-    #     # if epoch % display == 0:
-    #     #     print(f"Epoch {epoch}, Loss = {np.mean(batch_losses)}")
-
-    #     # Validation loss calculation
-    #     #print(f'Starting validation step for epoch {epoch}')
-    #     x_recon_val, mean_val, logvar_val, z = vae(val_data, training=False)
-    #     val_health = compute_health_indicator(val_data, x_recon_val, target_rows=target_rows, num_features=num_features)
-    #     val_loss = vae_loss(val_data, x_recon_val, mean_val, logvar_val, val_health, reloss_coeff, klloss_coeff, moloss_coeff)
-
-
-    #     # val_losses = []
-    #     # for val_batch in val_dataset:
-    #     #     x_recon_val, mean_val, logvar_val, z = vae(val_batch, training=False)
-    #     #     val_health = compute_health_indicator(val_batch, x_recon_val, target_rows=batch_size, num_features=num_features)
-    #     #     if tf.size(val_health) > 0:  # skip empty returns if any
-    #     #         val_loss_batch = vae_loss(val_batch, x_recon_val, mean_val, logvar_val, val_health,
-    #     #                                   reloss_coeff, klloss_coeff, moloss_coeff)
-    #     #         val_losses.append(val_loss_batch.numpy())
-    #     # val_loss = np.mean(val_losses)
-        
-    #     # Old validation loss code
-    #     # x_recon_val, mean_val, logvar_val, z = vae(val_data, training=False)
-    #     # val_health = compute_health_indicator(val_data, x_recon_val, target_rows, num_features).numpy()
-    #     # val_loss = vae_loss(val_data, x_recon_val, mean_val, logvar_val, val_health,
-    #     #                     reloss_coeff, klloss_coeff, moloss_coeff).numpy()
-        
-    #     if val_loss < (best_val_loss - min_delta):
-    #         best_val_loss = val_loss
-    #         epochs_without_improvement = 0
-    #     else:
-    #         epochs_without_improvement += 1
-
-    #     if epochs_without_improvement >= patience:
-    #         print(f"Early stopping at epoch {epoch} (Val loss no improvement for {patience} epochs)")
-    #         break
-
-    # print(f"Training finished!!! Time: {time() - begin_time:.2f} seconds")
-
-    # # Evaluate trained model
-    
-    # # Reconstructs test and train data using trained VAE
-    # # x_recon_train, _, _, _ = vae(sample_data, training=False)
-    # # x_recon_test, _, _, _ = vae(test_data, training=False)
-    # # x_recon_val, _, _, _ = vae(val_data, training=False)
-
-    # # # Computes HI for each sample
-    # # hi_train = compute_health_indicator(sample_data, x_recon_train, target_rows, num_features).numpy() # Output shape = (num_train_samples, target_rows)
-    # # hi_test = compute_health_indicator(test_data, x_recon_test, target_rows, num_features).numpy()
-    # # hi_val = compute_health_indicator(val_data, x_recon_val, target_rows, num_features).numpy()
-
-    # # Batch reconstructed data to compute HI for each sample
-    # # x_recon_train = tf.data.Dataset.from_tensor_slices(x_recon_train).batch(batch_size, drop_remainder=True)
-    # # x_recon_test = tf.data.Dataset.from_tensor_slices(x_recon_test).batch(batch_size, drop_remainder=True)
-    # # x_recon_val = tf.data.Dataset.from_tensor_slices(x_recon_val).batch(batch_size, drop_remainder=True)
-    # print(f'\n Exaluating trained VAE on validation set')
-    # val_losses = []
-    # hi_val = []
-    # for val_batch in val_dataset:
-    #     x_recon_val, mean_val, logvar_val, z = vae(val_batch, training=False)
-    #     print(f'\n Validation HI:')
-    #     val_health = compute_health_indicator(val_batch, x_recon_val, target_rows=batch_size, num_features=num_features).numpy()
-    #     hi_val.append(val_health)
-    #     if tf.size(val_health) > 0:  # skip empty returns if any
-    #         val_loss_batch = vae_loss(val_batch, x_recon_val, mean_val, logvar_val, val_health,
-    #                                     reloss_coeff, klloss_coeff, moloss_coeff)
-    #         val_losses.append(val_loss_batch.numpy())
-    # val_loss = np.mean(val_losses)
-    # hi_val = np.array(hi_val)
-    # hi_val = hi_val.reshape(-1, batch_size)
-    # print(f'\n Validation eval complete, \n val_loss = {val_loss} \t type = {type(val_loss)}, \n HI_val = {hi_val}, \n shape HI_val = {hi_val.shape}')
-
-    # print(f'\n Exaluating trained VAE on training set')
-    # train_losses = []
-    # hi_train = []
-    # for train_batch in train_dataset:
-    #     x_recon_train, mean_train, logvar_train, z = vae(train_batch, training=False)
-    #     print(f'\n Training batch HI:')
-    #     train_health = compute_health_indicator(train_batch, x_recon_train, target_rows=batch_size, num_features=num_features)
-    #     print(f'\n HI for current batch: \n shape = {train_health.shape}')
-    #     hi_train.append(train_health)
-    #     if tf.size(train_health) > 0:  # skip empty returns if any
-    #         train_loss_batch = vae_loss(train_batch, x_recon_train, mean_train, logvar_train, train_health,
-    #                                     reloss_coeff, klloss_coeff, moloss_coeff)
-    #         train_losses.append(train_loss_batch.numpy())
-    # train_loss = np.mean(train_losses)
-    # hi_train = np.array(hi_train)
-    # #hi_train = np.concatenate(hi_train, axis=0)
-    # hi_train.reshape((-1, batch_size))
-    # print(f'\n Training eval complete, \n train_loss = {train_loss} \t type = {type(train_loss)}, \n HI_train = {hi_train}, \n shape HI_train = {hi_train.shape}')
-
-    # print(f'\n Exaluating trained VAE on test set')
-    # test_losses = []
-    # hi_test = []
-    # for test_batch in test_dataset:
-    #     x_recon_test, mean_test, logvar_test, z = vae(test_batch, training=False)
-    #     print(f'\n Test HI:')
-    #     test_health = compute_health_indicator(test_batch, x_recon_test, target_rows=batch_size, num_features=num_features)
-    #     hi_test.append(test_health)
-    #     if tf.size(test_health) > 0:  # skip empty returns if any
-    #         test_loss_batch = vae_loss(test_batch, x_recon_test, mean_test, logvar_test, test_health,
-    #                                     reloss_coeff, klloss_coeff, moloss_coeff)
-    #         test_losses.append(test_loss_batch.numpy())
-    # test_loss = np.mean(test_losses)
-    # hi_test = np.array(hi_test)
-    # hi_test = hi_test.reshape(-1, batch_size)
-    # print(f'\n Test eval complete, \n test_loss = {test_loss} \t type = {type(test_loss)}, \n HI_test = {hi_test}, \n shape HI_test = {hi_test.shape}')
-
-    # losses = [train_loss, test_loss, val_loss]
-
-
-    return hi_train, hi_test, hi_val, vae, epoch_losses, losses
 
 
 ''' PRINT PROGRESS OF HYPERPARAMETER OPTIMIZATION PROCESS'''
@@ -1162,7 +1180,7 @@ def plot_HI_graph(HI_all, dataset_name, sp_method_name, folder_output, show_plot
         plt.show()
 
 ''' TRAINS VAE USING HYPERPARAMETERS WITH LOWEST ERROR'''
-def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data, vae_val_data, vae_test_data, expected_cols, target_rows, num_features, hidden_2=1):
+def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data, vae_val_data, vae_test_data, expected_cols, target_rows, num_features, hidden_2=64):
     # Load hyperparameters
     df = pd.read_csv(opt_hyperparam_filepath)
     columns=["test_panel_id", "params", "error"]
@@ -1264,14 +1282,16 @@ train_once = True
 if __name__ == "__main__" and train_once:
     # Variables:
     target_rows=300
-    hidden_1 = 50
-    batch_size = 15
-    learning_rate = 0.005
+    hidden_1 = 250
+    batch_size = 10
+    learning_rate = 0.001
     epochs = 30
-    reloss_coeff = 0.8
-    klloss_coeff = 0.1
-    moloss_coeff = 0.1
+    reloss_coeff = 0.93
+    klloss_coeff = 0.05
+    moloss_coeff = 0.02
     timesteps_per_batch = 10
+
+    vae_model_save_path = 'full_vae_model.keras'
 
     #expected_cols = ['Amplitude_Time: Mean','Amplitude_Time: Standard Deviation','Amplitude_Time: Root Amplitude','Amplitude_Time: Root Mean Square','Amplitude_Time: Root Sum of Squares','Amplitude_Time: Peak','Amplitude_Time: Skewness','Amplitude_Time: Kurtosis','Amplitude_Time: Crest factor','Amplitude_Time: Clearance factor','Amplitude_Time: Shape factor','Amplitude_Time: Impulse factor','Amplitude_Time: Maximum to minimum difference','Amplitude_Time: FM4','Amplitude_Time: Median','Energy_Time: Mean','Energy_Time: Standard Deviation','Energy_Time: Root Amplitude','Energy_Time: Root Mean Square','Energy_Time: Root Sum of Squares','Energy_Time: Peak','Energy_Time: Skewness','Energy_Time: Kurtosis','Energy_Time: Crest factor','Energy_Time: Clearance factor','Energy_Time: Shape factor','Energy_Time: Impulse factor','Energy_Time: Maximum to minimum difference','Energy_Time: Median']
     #expected_cols_freq = ['Energy_Freq: Mean Frequency','Energy_Freq: f2','Energy_Freq: f3','Energy_Freq: f4','Energy_Freq: f5','Energy_Freq: f6','Energy_Freq: f7','Energy_Freq: f8','Energy_Freq: f9','Energy_Freq: f10','Energy_Freq: f11','Energy_Freq: f12','Energy_Freq: f13','Energy_Freq: f14','Energy_Physics: Cumulative energy']
@@ -1305,10 +1325,15 @@ if __name__ == "__main__" and train_once:
     df_test = df_test[expected_cols]
     df_val = df_val[expected_cols]
 
-    df_freq_test = df_test.loc[:, df_test.columns.str.contains('Freq')]
+    include = ['Amplitude_Freq']
+    exclude = ['Rise', 'Energy', 'Duration', 'RMS', 'Count']
+
+    pattern = f"({'|'.join(include)})(?!.*({'|'.join(exclude)}))"
+
+    df_freq_test = df_test.loc[:, df_test.columns.str.contains(pattern, regex=True)]
     df_test_resampled = resample_dataframe(df_freq_test, target_rows)
 
-    df_freq_val = df_val.loc[:, df_val.columns.str.contains('Freq')]
+    df_freq_val = df_val.loc[:, df_val.columns.str.contains(pattern, regex=True)]
     df_val_resampled = resample_dataframe(df_freq_val, target_rows)
 
     # df_test_resampled = pd.DataFrame()
@@ -1343,10 +1368,15 @@ if __name__ == "__main__" and train_once:
     val_dataset = create_batches_from_arrays_list(val_arrays, timesteps_per_batch, batch_size)
 
     # Train model
-    hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(train_dataset, val_dataset, test_dataset, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=8, timesteps_per_batch=timesteps_per_batch)
+    vae, epoch_losses = VAE_train(train_dataset, val_dataset, test_dataset, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=64, timesteps_per_batch=timesteps_per_batch)
+
+    losses, hi_train, hi_test, hi_val = evaluate_trained_VAE(hidden_1, hidden_2, vae_model_save_path, train_dataset, val_dataset, test_dataset, timesteps_per_batch, num_features, reloss_coeff, klloss_coeff, moloss_coeff)
+    
     print(f'shape of hi_train[0]: {hi_train[0].shape}')
     x_range = hi_train[0].shape[0]
     print(f'x_range = {x_range}')
+
+    #loaded_trained_vae = tf.keras.models.load_model('full_vae_model.h5')
 
     # # Print 
     # print(f'Epoch losses: {epoch_losses}')
