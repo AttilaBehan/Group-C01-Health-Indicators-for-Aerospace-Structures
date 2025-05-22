@@ -195,7 +195,7 @@ def VAE_objective(params, batch_size, target_rows):
     # Print parameters being tested
     print(
         f"Trying parameters: hidden_1={hidden_1}, learning_rate={learning_rate}, "
-        f"epochs={epochs}, reloss_coeff={reloss_coeff}, klloss_coeff={klloss_coeff}, moloss_coeff={moloss_coeff}")
+        f"epochs={epochs}, reloss_coeff={reloss_coeff}, klloss_coeff={klloss_coeff}, moloss_coeff={moloss_coeff}, hidden_2 = {hidden_2}")
 
     # Train VAE and obtain HIs for train and test data
     hi_train, hi_test, hi_val, vae, epoch_losses, train_test_val_losses = VAE_train(
