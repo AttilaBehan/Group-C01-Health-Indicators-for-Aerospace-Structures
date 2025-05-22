@@ -158,12 +158,12 @@ def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filep
         print("VAE_hyperparameter_optimisation signature:", inspect.signature(VAE_hyperparameter_optimisation))
 
         # Optimize - Runs optimization funtion to tune hyperparameters over 'n_calls_per_sample' trials
-        best_params = VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls_per_sample, space)
+        best_params, best_errors = VAE_hyperparameter_optimisation(vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, n_calls_per_sample, space)
         # best_params = opt_hyperparameters[0]
         # best_error = opt_hyperparameters[1]
 
         # Stores tuple of: test_id, hyperparametes, and error in results list
-        results.append((test_id, best_params)) 
+        results.append((test_id, best_params, best_errors)) 
 
     # Save results in df (save list of tuples in df with 3 cols) -> save df to csv file
     df_out = pd.DataFrame(results, columns=["test_panel_id", "params", "error"])
@@ -182,7 +182,7 @@ def VAE_objective(params, batch_size):
     """
 
     # Unpack parameters
-    hidden_1, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff = params
+    hidden_1, learning_rate, epochs, hidden_2, reloss_coeff, klloss_coeff, moloss_coeff = params
 
     # Reproducibility
     random.seed(VAE_Seed.vae_seed)
