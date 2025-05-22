@@ -172,6 +172,9 @@ def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filep
     df_out = pd.DataFrame(results, columns=["test_panel_id", "params", "error"])
     df_out.to_csv(os.path.join(folder_save_opt_param_csv, "hyperparameters-opt-samples.csv"))
     print(f"\n✅ Saved best parameters to {os.path.join(folder_save_opt_param_csv, 'hyperparameters-opt-samples.csv')}")
+    return best_params
+
+
 def VAE_objective(params, batch_size, target_rows):
     """
     Objective function for optimizing VAE hyperparameters.

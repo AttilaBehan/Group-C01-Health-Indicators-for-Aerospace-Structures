@@ -6,7 +6,7 @@ class VAE_Seed():
 # Defines Keras VAE model
 class VAE(tf.keras.Model):
     # Contructor method which initializes VAE, hidden_2 = size of latent space, usually smaller than hidden_1
-    def __init__(self, input_dim, hidden_1, hidden_2=10):
+    def __init__(self, input_dim, hidden_1, hidden_2):
         # Calls parent class constructor to initialize model properly
         super(VAE, self).__init__()
 
