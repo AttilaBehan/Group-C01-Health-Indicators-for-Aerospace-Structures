@@ -5,7 +5,7 @@ import numpy as np
 def plot_results(train_data, test_data, filepath, show):
     """This function plots the health indactor from a model. with one plot for each sample used for testing
         inputs:
-        train_data (12xtime_length), array: should contain the training health indidactor data for all 12 training samples
+        train_data (list of 10xtime_length), list of array: should contain the training health indidactor data for all 12 training samples
         test_data (12Xtime_lenght), array: should contain the testing health indicators for everey sample
         filepath (string): should contain the filepath where the plot should be saved if show is set to False
         show (bolean): Determines whether or not the plot will be shown and not saved or not shown but saved to the filepath specified"""
