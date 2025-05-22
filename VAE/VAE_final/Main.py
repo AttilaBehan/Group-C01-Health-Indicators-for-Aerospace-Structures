@@ -169,7 +169,7 @@ optimizing = True
 if __name__ == "__main__" and optimizing:
     folder_store_hyperparameters = r"VAE_AE_DATA"
 
-    target_rows = 300
+    target_rows = 201
     batch_size = 300
     n_calls_per_sample = 12
     feature_level_data_base_path = r"VAE_AE_DATA"
@@ -216,7 +216,7 @@ if __name__ == "__main__" and code_og:
     all_data_scaled = scaler.transform(all_data).astype(np.float32)
 
     hidden_1 = 50
-    batch_size = 5
+    batch_size = 300
     learning_rate = 0.0055
     epochs = 550
     reloss_coeff = 0.075
