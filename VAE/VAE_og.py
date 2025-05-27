@@ -29,7 +29,8 @@ tf.random.set_seed(VAE_Seed.vae_seed)
 np.random.seed(VAE_Seed.vae_seed)
 
 # Training_data_folder
-train_paths_folder = r"C:\Users\job\OneDrive - Delft University of Technology\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE\VAE_final\VAE_AE_DATA"
+#train_paths_folder = r"C:\Users\job\OneDrive - Delft University of Technology\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE\VAE_final\VAE_AE_DATA"
+train_paths_folder = r"c:\Users\naomi\OneDrive\Documents\Extracted_High_Features_data\Interpolated_to_equal_rows\ast_data\FFT_Morteza"
 # Get a list of CSV file paths in the folder
 train_paths = glob.glob(train_paths_folder + "/*.csv")
 
@@ -37,7 +38,7 @@ df_sample1 = pd.read_csv(train_paths[0])
 expected_cols = list(df_sample1.columns)
 expected_cols = expected_cols[1:]
 
-target_rows = 300
+target_rows = 1200
 
 
 ''' STRUCTURE OF THE CODE:
@@ -59,7 +60,7 @@ target_rows = 300
 ''' FUNCTIONS:'''
 
 # VAE merge data function and inputs for current dataset:
-target_rows = 300
+target_rows = 1200
 num_features=14
 hidden_2 = 64
 
@@ -75,7 +76,7 @@ def resample_dataframe(df, target_rows):
         resampled_data[col] = interpolated
     return pd.DataFrame(resampled_data)
 
-def VAE_merge_data_per_timestep(sample_filenames, expected_cols, target_rows=300):
+def VAE_merge_data_per_timestep(sample_filenames, expected_cols, target_rows=1200):
     """
     Purpose: Load multiple AE data files, resample each to have target_rows rows via interpolation, 
              standardize individually, flatten them, and stack together.
@@ -365,7 +366,7 @@ def load_trained_vae(model_path, timesteps_per_batch=None, n_features=None, hidd
 ''' HI calculator based on reconstruction errors, 
 
     per timestep health scores: detect degradation at specific times, allows to check for monotonicity (penalize health decreases over time in VAE_loss)'''
-def compute_health_indicator(x, x_recon, k=1.0, target_rows=300, num_features=201):
+def compute_health_indicator(x, x_recon, k=1.0, target_rows=1200, num_features=201):
     ''' x, x_recon should have same shape and be 2D tensors
         k = sensitivity parameter (larger values penalize errors more)'''
     #print(f'x shape: {x.shape}')
@@ -460,7 +461,7 @@ def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coef
     return loss
 
 ''' Apply the train_step() function to train the VAE'''
-def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=64, target_rows=300, patience=50, min_delta=1e-4, timesteps_per_batch=10, model_save_path='vae_model.weights.keras', final_model_save_path='full_vae_model.keras'):
+def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=64, target_rows=1200, patience=50, min_delta=1e-4, timesteps_per_batch=10, model_save_path='vae_model.weights.keras', final_model_save_path='full_vae_model.keras'):
     """
         Trains VAE on sample_data with inbuilt early stopping when validation diverges, then evaluates VAE on test_data
     
@@ -1046,7 +1047,7 @@ def VAE_save_results(fitness_all, fitness_test, panel, freq, SP_Method_file_type
 
 ''' Uses VAE_hyperparameter_optimization() in loop using LOOCV'''
 
-def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filepaths, n_calls_per_sample=40, target_rows=300):
+def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filepaths, n_calls_per_sample=40, target_rows=1200):
     """
     Run leave-one-out cross-validation on 12 samples to optimize VAE hyperparameters.
     Saves the best set of hyperparameters per test sample in a CSV.
@@ -1281,21 +1282,22 @@ def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data,
 train_once = True
 if __name__ == "__main__" and train_once:
     # Variables:
-    target_rows=300
-    hidden_1 = 250
-    batch_size = 10
+    target_rows=1200
+    hidden_1 = 210
+    batch_size = 30
     learning_rate = 0.001
-    epochs = 30
+    epochs = 5
     reloss_coeff = 0.93
     klloss_coeff = 0.05
     moloss_coeff = 0.02
-    timesteps_per_batch = 10
+    timesteps_per_batch = 20
 
     vae_model_save_path = 'full_vae_model.keras'
 
     #expected_cols = ['Amplitude_Time: Mean','Amplitude_Time: Standard Deviation','Amplitude_Time: Root Amplitude','Amplitude_Time: Root Mean Square','Amplitude_Time: Root Sum of Squares','Amplitude_Time: Peak','Amplitude_Time: Skewness','Amplitude_Time: Kurtosis','Amplitude_Time: Crest factor','Amplitude_Time: Clearance factor','Amplitude_Time: Shape factor','Amplitude_Time: Impulse factor','Amplitude_Time: Maximum to minimum difference','Amplitude_Time: FM4','Amplitude_Time: Median','Energy_Time: Mean','Energy_Time: Standard Deviation','Energy_Time: Root Amplitude','Energy_Time: Root Mean Square','Energy_Time: Root Sum of Squares','Energy_Time: Peak','Energy_Time: Skewness','Energy_Time: Kurtosis','Energy_Time: Crest factor','Energy_Time: Clearance factor','Energy_Time: Shape factor','Energy_Time: Impulse factor','Energy_Time: Maximum to minimum difference','Energy_Time: Median']
     #expected_cols_freq = ['Energy_Freq: Mean Frequency','Energy_Freq: f2','Energy_Freq: f3','Energy_Freq: f4','Energy_Freq: f5','Energy_Freq: f6','Energy_Freq: f7','Energy_Freq: f8','Energy_Freq: f9','Energy_Freq: f10','Energy_Freq: f11','Energy_Freq: f12','Energy_Freq: f13','Energy_Freq: f14','Energy_Physics: Cumulative energy']
     feature_level_data_base_path = r"C:\Users\job\OneDrive - Delft University of Technology\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE\VAE_final\VAE_AE_DATA"
+    feature_level_data_base_path = r"c:\Users\naomi\OneDrive\Documents\Extracted_High_Features_data\Interpolated_to_equal_rows\ast_data\FFT_Morteza"
     all_paths = glob.glob(feature_level_data_base_path + "/*.csv")
     n_filepaths = len(all_paths)
 
@@ -1385,7 +1387,8 @@ if __name__ == "__main__" and train_once:
     # print(f'\n HI_val shape: {hi_val.shape}, \n HI_val: {hi_val}')
 
     # Plot HI graph
-    filepath = r"C:\Users\job\Downloads\Test_HI_graph.png"
+    #filepath = r"C:\Users\job\Downloads\Test_HI_graph.png"
+    filepath = r"C:\Users\naomi\OneDrive\Documents\Low_Features\Test_HI_graph.png"
     colors = ['b', 'r', 'g', 'c', 'm', 'y', 'orange', 'purple', 'brown', 'pink', 'gray', 'lime', 'violet', 'yellow']
     x = np.linspace(0,100,x_range)
     plt.plot(x, hi_train[0].reshape(-1,1), color='r', label='Sample 1')
@@ -1404,7 +1407,8 @@ if __name__ == "__main__" and train_once:
     plt.show()
 
     # Create grid of subplots
-    filepath = r"C:\Users\job\Downloads\Test_HI_graph_all_samples.png"
+    #filepath = r"C:\Users\job\Downloads\Test_HI_graph_all_samples.png"
+    filepath = r"C:\Users\naomi\OneDrive\Documents\Low_Features\Test_HI_graph_all_samples.png"
     fig, axes = plt.subplots(3, 4, figsize=(12, 9))
 
     # Flatten the axes array for simple iteration
@@ -1434,7 +1438,7 @@ optimizing = False
 if __name__ == "__main__" and optimizing:
     folder_store_hyperparameters = r"C:\Users\naomi\OneDrive\Documents\Low_Features"
 
-    target_rows = 300
+    target_rows = 1200
     batch_size = 300
     n_calls_per_sample = 12
     feature_level_data_base_path = r"C:\Users\job\OneDrive - Delft University of Technology\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE\VAE_final\VAE_AE_DATA"
