@@ -295,3 +295,4 @@ def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data,
 
         results[i*n_filepaths:i*n_filepaths+n_filepaths,:] = hi_full
     return results, losses  # Results has columns in time and rows for sample, results for changing test panel stacked, losses stacked for changing test panel
+    
