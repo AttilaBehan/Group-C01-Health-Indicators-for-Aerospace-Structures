@@ -5,7 +5,7 @@ import glob
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 #from Feature_Extraction import CSV_to_Array
 import numpy as np
-import math 
+import math
 import pandas as pd
 import torch
 import matplotlib.pyplot as plt
@@ -14,18 +14,7 @@ from scipy.signal.windows import gaussian
 from scipy.ndimage import convolve1d
 from tftb.processing import smoothed_pseudo_wigner_ville
 from sklearn.preprocessing import StandardScaler
-from scipy.signal import get_window 
-#from Variables import SharedData 
-
-''' To Do: add downsampling factors to class '''
-
-# Downsampling parameters from class
-downsample_factor=20 
-truncation_loc=40000 
-overlap_window=200
-
-# Make this true if you want to plot one of the color plots to check
-plot_visual = False
+from scipy.signal import get_window
 
 ''' This file contains the main function which computes the SPWVD and one which applies this to the windowed 
                                         csv files of the various signals which have been fully preprocessed. 
@@ -37,25 +26,6 @@ plot_visual = False
       3. Definition of the sampling frequency based on the individual cycle length and downsampling factor 
       4. Main SPWVD funtion, apply function, and fuction which applies main function to windowed data files
                 ^^^ as of now the function is not complete (only calculates it for the first window, I will complete this nexrt session)'''
-
-# Windowed data file names
-windowing_output_folder = r"C:\Users\naomi\OneDrive\Documents\Low_Features\Low_features_windowed_fully_preprocessed"
-# Get a list of CSV file paths in the folder
-Windowed_filenames = glob.glob(windowing_output_folder + "/*.csv")
-# Folder to store results in:
-spwvd_results_folder = r"C:\Users\naomi\OneDrive\Documents\Low_Features\SPWVD_results"
-#print(Windowed_filenames)
-#Windowed_filenames = Windowed_filenames[:1]
-# For testing code:
-#Windowed_filenames = ['Sample1_window_level_features_smoothed.csv', 'Sample1_window_level_features_smoothed.csv']
-
-# Signal columns to be used
-relevant_col_names = ['Amplitude_mean','Energy_mean','Counts_sum','Duration_mean','RMS_mean','Rise-Time_mean']
-#relevant_col_names = ['Amplitude_mean']
-smoothed_rel_col_names = ['Data_Window_idx','Time_cycle','Amplitude_mean_smoothed','Energy_mean_smoothed','Counts_sum_smoothed','Duration_mean_smoothed','RMS_mean_smoothed','Rise-Time_mean_smoothed']
-
-# Sampling frequency
-fs = 1/(0.5*downsample_factor)
 
 # Main SPWVD function:
 
@@ -121,7 +91,7 @@ def spwvd(x, fs, window_time=None, window_freq=None, Ntime=None, Nfreq=None):
 def group_spwvd(group):
     return spwvd(group.values, fs)
 
-def apply_SPWVD_to_windowed_data(filename, output_folder, truncation_loc, downsample_factor, overlap_window, relevant_col_names):
+def apply_SPWVD_to_windowed_data(filename, output_folder, truncation_loc, downsample_factor, overlap_window, relevant_col_names, plot_visual):
     # Load dataframe 
     df = pd.read_csv(filename)
     N_windows = int(np.max(df['Data_Window_idx'].values) + 1)
@@ -254,15 +224,36 @@ def apply_SPWVD_to_windowed_data(filename, output_folder, truncation_loc, downsa
         final_df.to_csv(full_output_path, index=False)
         print(f"\n Time frequency array of feature: {col}, saved as {output_filename} in {full_output_path}")
             
-        
-                
-        
-    
-
 #apply_SPWVD_to_windowed_data('Sample1_window_level_features_smoothed.csv')
+def apply_SPWVD(windowing_output_folder, SPWVD_dir):
+    ''' To Do: add downsampling factors to class '''
 
-for i, file in enumerate(Windowed_filenames): 
-    print(f'\n Processing data file {i+1} out of {len(Windowed_filenames)}')
-    apply_SPWVD_to_windowed_data(file, spwvd_results_folder, truncation_loc, downsample_factor, overlap_window, relevant_col_names)
+    # Downsampling parameters from class
+    downsample_factor=10 
+    truncation_loc=40000 
+    overlap_window=200
 
-print(f'\n All data processed and saved to {r"C:\Users\naomi\OneDrive\Documents\Low_Features\SPWVD_results"}')
+    # Make this true if you want to plot one of the color plots to check
+    plot_visual = False
+    # Get a list of CSV file paths in the folder
+    Windowed_filenames = glob.glob(windowing_output_folder + "/*.csv")
+    # Folder to store results in:
+    spwvd_results_folder = SPWVD_dir
+    #print(Windowed_filenames)
+    #Windowed_filenames = Windowed_filenames[:1]
+    # For testing code:
+    #Windowed_filenames = ['Sample1_window_level_features_smoothed.csv', 'Sample1_window_level_features_smoothed.csv']
+
+    # Signal columns to be used
+    relevant_col_names = ['Amplitude_mean','Energy_mean','Counts_sum','Duration_mean','RMS_mean','Rise-Time_mean']
+    #relevant_col_names = ['Amplitude_mean']
+    smoothed_rel_col_names = ['Data_Window_idx','Time_cycle','Amplitude_mean_smoothed','Energy_mean_smoothed','Counts_sum_smoothed','Duration_mean_smoothed','RMS_mean_smoothed','Rise-Time_mean_smoothed']
+
+    # Sampling frequency
+    fs = 1/(0.5*downsample_factor)
+
+    for i, file in enumerate(Windowed_filenames):
+        print(f'\n Processing data file {i+1} out of {len(Windowed_filenames)}')
+        apply_SPWVD_to_windowed_data(file, spwvd_results_folder, truncation_loc, downsample_factor, overlap_window, relevant_col_names, plot_visual)
+
+    print(f'\n All data processed and saved to {r"C:\Users\naomi\OneDrive\Documents\Low_Features\SPWVD_results"}')

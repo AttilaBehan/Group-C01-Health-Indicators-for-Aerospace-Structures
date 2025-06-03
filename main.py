@@ -97,15 +97,14 @@ def main():
         emd = EMD.runEMD(csv_dir, EMD_dir)
     elif choice == 7:   
         interpolate.get_missing_cycles(csv_dir, csv_interpolated_dir, 'Time (cycle)', cycle_length)
-        Pre_SPWVD.run_SPWVD_data_processing(csv_interpolated_dir, )
-        spwvd=SPWVD.apply_SPWVD_to_windowed_data(input_dir, Pre_SPWVD_dir, directory) 
+        windowed_folder=Pre_SPWVD.run_SPWVD_data_processing(directory, csv_interpolated_dir)
+        spwvd=SPWVD.apply_SPWVD(windowed_folder, SPWVD_dir) 
     elif choice == 8:
         hilbert=Hilbert.perform_ht(csv_dir, Hilbert_dir)
     elif choice == 9:
-        print(CWT_dir)
         cwt=CWT.perform_wavelet_transform(csv_dir, CWT_dir) 
     elif choice == 10:
-        fft=features.extract_frequency_statistical_features(cycle_length, FFT_new_dir, FFT_features_dir)
+        fft=features.extract_frequency_statistical_features(cycle_length, FFT_new_dir, FFT_features_dir) 
         #emd=features.extract_time_statistical_features(cycle_length, EMD_dir, EMD_features_dir)
         #stft=features.extract_time_frequency_statistical_features(STFT_dir, STFT_features_dir) 
         #spwvd=features.transform_SPWD(SPWVD_dir, SPWVD_transformed_dir) 

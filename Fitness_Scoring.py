@@ -1,12 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import glob
 import os
 from scipy.signal import resample
 from scipy.stats import pearsonr
 from sklearn.preprocessing import Normalizer
-import math
-from itertools import combinations
+from itertools import zip_longest
 import pandas as pd
 from scipy.signal import resample_poly
 
@@ -254,7 +252,7 @@ def run2(dirname):
     for dir, root, files in os.walk(dirname): 
         print(dir)
         for file in files:
-            print(file)
+            print(file) 
             filepath=os.path.join(dir, file)
             df=pd.read_csv(filepath).dropna()
             df=df.drop(df.columns[0], axis=1)
@@ -263,11 +261,8 @@ def run2(dirname):
             scaler = Normalizer()
             X = scaler.fit_transform(X)
             trendability_score = Tr(X)
-            print("Tr: ", trendability_score)
             monotonicity_score = Mo(X)
-            print("Mo", monotonicity_score)
             prognosability_score = Pr(X)
-            print("Pr", prognosability_score)
             # print(f"Folder: {filepath}")
             # print(f"Trendability score: {trendability_score:.4f}")
             # print(f"Monotonicity score: {monotonicity_score:.4f}")
@@ -276,21 +271,17 @@ def run2(dirname):
     return mpts
 
 
-#run(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\Extracted_Features\Time_Domain_Interpolated_Features_500_500_CSV", r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\Time")
-mpt=run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\FFT")#r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\Time")
-vals=mpt
-mpt=[sum(i) for i in mpt]
-# mpt4=run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\Hilbert")
-# print(mpt4) 
-    
-# mpt=run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\FFT")
-# print(mpt)
-# mpt2=run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\EMD")
-# mpt3=run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\STFT")
-# mpt=[0.8916761226903396, 0.8818043128285002, 0.8349599351283772, 1.1470354144987795, 0.8411110319051622, 0.9115784161714374, 1.1867663126205978, 0.8200922977708105, 0.8839076437135127, 0.8923121982758354, 0.8832062796573574, 0.8804833679108687, 1.0182944432636267, 1.167694511980399]
-mpt2=[1.001811426676694, 0.9675671817963061, 1.0043470537675676, 0.9103272718831901, 0.7687549694702348, 0.8393015575624319, 0.9536719155792943, 0.6756066472646505, 0.9691960417363814, 0.6389040095517906, 1.0036702679078315, 0.7877630772603132, 0.871640855805778, 1.0954029796905935, 1.0022579219518997, 1.0570611447254672, 0.8104371040243544, 0.9908644269641327, 0.9104689031811455]
-mpt3=[1.0038847252919743, 0.9679655627938872, 1.2459986533947236, 1.3403734771114162] 
-
+# mpt1= run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\CWT")
+# mpt2= run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\EMD")
+# mpt3= run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\FFT")
+mpt4= run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\Hilbert")
+print(mpt4)
+mpt5= run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\SPWVD")
+print("\n\n\n\n")
+print(mpt5) 
+# mpt6= run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\STFT")
+# mpt7= run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\Time")
+ 
 def plot_bar_chart(mpt):#, mpt2, mpt3):
     """
     Plots a simple bar chart from a list of bar heights.
@@ -332,7 +323,7 @@ def plot_bar_chart(mpt):#, mpt2, mpt3):
     plt.tight_layout()
     plt.show()
 
-plot_bar_chart(mpt)#, mpt2, mpt3)
+#plot_bar_chart(mpt)#, mpt2, mpt3)
 #from sklearn.preprocessing import MinMaxScaler
 
 #file=r"C:\Users\attil\OneDrive\TU_Delft\C01_main\Output\FFT_new_features_500_500_CSV\Sample01.csv"
@@ -351,7 +342,20 @@ plot_bar_chart(mpt)#, mpt2, mpt3)
 #     plt.legend()
 #     plt.show()
 
-print(vals)
-print(mpt)
-outputdir=
-cols=['CWT', 'EMD','FFT', 'Hilbert', 'SPWVD', 'STFT', 'Time Domain'] 
+# vars={"CWT":mpt1,
+#       "EMD":mpt2,
+#       "FFT":mpt3,
+#       "Hilbert":mpt4,
+#       "SPWVD":mpt5,
+#       "STFT":mpt6,
+#       "Time":mpt7}
+
+# with open(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\output.txt", "w") as f:
+#     f.write(str(vars))
+
+# outputdir=r"C:\Users\attil\OneDrive\TU_Delft\C01_main"
+# os.makedirs(outputdir, exist_ok=True)
+# cols=['CWT', 'EMD','FFT', 'Hilbert', 'SPWVD', 'STFT', 'Time'] 
+# data = list(zip_longest(mpt1, mpt2, mpt3, mpt4, mpt5, mpt6, mpt7))
+# df = pd.DataFrame(data, columns=cols)
+# df.to_csv(os.path.join(outputdir, 'fitness_scores.csv'), index=False) 
