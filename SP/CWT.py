@@ -63,5 +63,5 @@ def process_folder(input_folder, output_folder, wavelet='morl', max_scale=30):
 # Example usage
 if __name__ == "__main__":
     input_folder = r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\Low_Features_500_500_CSV"
-    output_folder = r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\output CWT"
+    output_folder = r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\CWTout"
     process_folder(input_folder, output_folder)
