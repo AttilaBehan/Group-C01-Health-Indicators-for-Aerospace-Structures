@@ -32,16 +32,16 @@ random.seed(VAE_Seed.vae_seed)
 tf.random.set_seed(VAE_Seed.vae_seed)
 np.random.seed(VAE_Seed.vae_seed)
 
-# Training_data_folder
-train_paths_folder = r"VAE_AE_DATA"
-# Get a list of CSV file paths in the folder
-train_paths = glob.glob(train_paths_folder + "/*.csv")
+# # Training_data_folder
+# train_paths_folder = r"VAE_AE_DATA"
+# # Get a list of CSV file paths in the folder
+# train_paths = glob.glob(train_paths_folder + "/*.csv")
 
-df_sample1 = pd.read_csv(train_paths[0])
-expected_cols = list(df_sample1.columns)
-expected_cols = expected_cols[1:]
+# df_sample1 = pd.read_csv(train_paths[0])
+# expected_cols = list(df_sample1.columns)
+# expected_cols = expected_cols[1:]
 
-target_rows = 300
+# target_rows = 300
 
 ''' STRUCTURE OF THE CODE:
 
@@ -87,7 +87,7 @@ space = [
 # Use the decorator to automatically convert parameters to keyword arguments
 # @use_named_args(space) # converts positional arguments to keyword arguments
 
-train_once = False
+train_once = True
 if __name__ == "__main__" and train_once:
     # Variables:
     target_rows=200
@@ -104,12 +104,33 @@ if __name__ == "__main__" and train_once:
     #expected_cols = ['Amplitude_Time: Mean','Amplitude_Time: Standard Deviation','Amplitude_Time: Root Amplitude','Amplitude_Time: Root Mean Square','Amplitude_Time: Root Sum of Squares','Amplitude_Time: Peak','Amplitude_Time: Skewness','Amplitude_Time: Kurtosis','Amplitude_Time: Crest factor','Amplitude_Time: Clearance factor','Amplitude_Time: Shape factor','Amplitude_Time: Impulse factor','Amplitude_Time: Maximum to minimum difference','Amplitude_Time: FM4','Amplitude_Time: Median','Energy_Time: Mean','Energy_Time: Standard Deviation','Energy_Time: Root Amplitude','Energy_Time: Root Mean Square','Energy_Time: Root Sum of Squares','Energy_Time: Peak','Energy_Time: Skewness','Energy_Time: Kurtosis','Energy_Time: Crest factor','Energy_Time: Clearance factor','Energy_Time: Shape factor','Energy_Time: Impulse factor','Energy_Time: Maximum to minimum difference','Energy_Time: Median']
     #expected_cols_freq = ['Energy_Freq: Mean Frequency','Energy_Freq: f2','Energy_Freq: f3','Energy_Freq: f4','Energy_Freq: f5','Energy_Freq: f6','Energy_Freq: f7','Energy_Freq: f8','Energy_Freq: f9','Energy_Freq: f10','Energy_Freq: f11','Energy_Freq: f12','Energy_Freq: f13','Energy_Freq: f14','Energy_Physics: Cumulative energy']
     feature_level_data_base_path = r"VAE_AE_DATA"
+    feature_level_data_base_path = r"c:\Users\naomi\OneDrive\Documents\Extracted_High_Features_data\Interpolated_to_equal_rows\FFT_"
     all_paths = glob.glob(feature_level_data_base_path + "/*.csv")
     n_filepaths = len(all_paths)
 
     df_sample1 = pd.read_csv(all_paths[0])
     expected_cols = list(df_sample1.columns)
     expected_cols = expected_cols[1:]
+
+    expected_cols = [
+        "Energy_Variance", "Energy_Mean", "Energy_P13", "Counts_Variance", "Energy_P10",
+        "Duration_Variance", "Rise-Time_Mean", "Amplitude_Variance", "Amplitude_Mean", "Rise-Time_P13",
+        "Amplitude_P13", "Rise-Time_P10", "Counts_P10", "RMS_P9", "Counts_P13",
+        "Counts_Mean", "Duration_P10", "Rise-Time_Variance", "Amplitude_P10", "Duration_P13",
+        "Duration_Mean", "RMS_Variance", "RMS_Mean", "RMS_P10", "Amplitude_P9",
+        "RMS_P13", "RMS_Skewness", "Rise-Time_P9", "Duration_P9", "Duration_Skewness",
+        "Counts_P9", "Amplitude_Skewness", "RMS_P6", "Counts_Skewness", "Duration_P12",
+        "Counts_P12", "Amplitude_P6", "Counts_P6", "Amplitude_P12", "Duration_P6",
+        "Energy_P6", "Rise-Time_P6", "RMS_P11", "Rise-Time_Skewness", "RMS_P5",
+        "Energy_P9", "Rise-Time_P12", "RMS_P7", "Duration_P5", "Counts_P7",
+        "Counts_P5", "Energy_P5", "Amplitude_P7", "RMS_P14", "Duration_P7",
+        "Amplitude_P14", "RMS_P8", "Amplitude_P5", "Amplitude_P11", "Energy_P7",
+        "Rise-Time_P7", "Energy_P12", "Duration_P8", "Rise-Time_P5", "Amplitude_P8",
+        "Counts_P8", "Energy_P8", "Rise-Time_P8", "Duration_P14", "Rise-Time_P14",
+        "Counts_P14", "RMS_Kurtosis", "Energy_P14", "Duration_P11", "Amplitude_Kurtosis",
+        "Duration_Kurtosis", "Rise-Time_P11", "Counts_Kurtosis", "Rise-Time_Kurtosis", "Counts_P11",
+        "RMS_P12", "Energy_P11", "Energy_Skewness", "Energy_Kurtosis"
+    ]
     num_features = len(expected_cols)
     # Leave-one-out split
     test_path = all_paths[2]
@@ -122,8 +143,13 @@ if __name__ == "__main__" and train_once:
     vae_train_data, vae_scaler = VAE_merge_data_per_timestep(train_paths, expected_cols, target_rows)
 
     # Load expected colums of test data excluding time
+<<<<<<< HEAD
+    df_test = pd.read_csv(test_path).drop(columns=['Time (Cycle)', 'Time (cycle)',], errors='ignore')
+    df_val = pd.read_csv(val_path).drop(columns=['Time (Cycle)', 'Time (cycle)',], errors='ignore')
+=======
     df_test = pd.read_csv(test_path).drop(columns='Time (cycle)')
     df_val = pd.read_csv(val_path).drop(columns='Time (cycle)')
+>>>>>>> 890e81015c509f1dd7bfc924b5294bcc55cd26cf
     df_test = df_test[expected_cols]
     df_val = df_val[expected_cols]
 
