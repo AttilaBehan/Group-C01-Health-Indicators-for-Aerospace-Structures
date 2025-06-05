@@ -66,7 +66,7 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
     display = 10 # display loss every 50 epochs
 
     # Initialize VAE model
-    vae = VAE(n_input, hidden_1, hidden_2)
+    vae = VAE(target_rows, num_features, hidden_1, hidden_2)
     # Adam optimizer
     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
     # Split sample_data into batches for memory efficiency
