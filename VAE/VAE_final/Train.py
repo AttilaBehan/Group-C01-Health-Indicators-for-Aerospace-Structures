@@ -41,59 +41,35 @@ def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coef
 
 ''' Apply the train_step() function to train the VAE'''
 def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, hidden_2, target_rows, num_features=201, patience=50, min_delta=1e-4):
-    """
-        Trains VAE on sample_data with inbuilt early stopping when validation diverges, then evaluates VAE on test_data
-    
-        Parameters:
-        - sample_data: (Scaled) training data
-        - test_data: (Scaled) test data
-        - hidden_1: size of first hidden layer
-        - batch_size, learning_rate, epochs: Training hyperparameters
-        - reloss_coeff, klloss_coeff, moloss_coeff: loss component weights
-
-        Returns: 
-        - loss: for monitoring/plotting
-    """
-
-    klloss_coeff = klloss_coeff/hidden_2
-    # Reproducability
+    klloss_coeff = klloss_coeff / hidden_2
     random.seed(VAE_Seed.vae_seed)
     tf.random.set_seed(VAE_Seed.vae_seed)
     np.random.seed(VAE_Seed.vae_seed)
 
-    # Initialize Model and Training Settings
-    n_input = sample_data.shape[1] # input dimension (e.g. target_rows*num_col)
-    display = 10 # display loss every 50 epochs
+    n_input = sample_data.shape[1]
+    display = 10
 
-    # Initialize VAE model
     vae = VAE(target_rows, num_features, hidden_1, hidden_2)
-    # Adam optimizer
     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    # Split sample_data into batches for memory efficiency
     train_dataset = tf.data.Dataset.from_tensor_slices(sample_data).batch(batch_size, drop_remainder=True)
-    val_dataset = tf.data.Dataset.from_tensor_slices(val_data).batch(batch_size, drop_remainder=True)
-    test_dataset = tf.data.Dataset.from_tensor_slices(test_data).batch(batch_size, drop_remainder=True)
+    val_dataset = tf.data.Dataset.from_tensor_slices(val_data).batch(1, drop_remainder=False)
+    test_dataset = tf.data.Dataset.from_tensor_slices(test_data).batch(1, drop_remainder=False)
 
-    # for tracking divergence with validation data
     best_val_loss = np.inf
     epochs_without_improvement = 0
 
-    # Training loop
     begin_time = time()
     print(f'Start training for sample data shape: {sample_data.shape}')
 
-    # Track average loss per epoch
     epoch_losses = []
     for epoch in range(epochs):
-        #print(f'Starting Train step {epoch}')
         loss = train_step(vae, sample_data, optimizer, reloss_coeff, klloss_coeff, moloss_coeff, target_rows, num_features)
         epoch_losses.append(loss.numpy())
-        #print(f'Completed Train step {epoch}')
         
         if epoch % display == 0:
             print(f'Epoch {epoch}, Loss = {loss}')
         x_recon_val, mean_val, logvar_val, z = vae(val_data, training=False)
-        val_health = compute_health_indicator(val_data, x_recon_val, target_rows=target_rows, num_features=num_features)
+        val_health = compute_health_indicator(val_data, x_recon_val, target_rows=target_rows, num_features=num_features).numpy()
         val_loss = vae_loss(val_data, x_recon_val, mean_val, logvar_val, val_health, reloss_coeff, klloss_coeff, moloss_coeff)
       
         if val_loss < (best_val_loss - min_delta):
@@ -108,65 +84,53 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
 
     print(f"Training finished!!! Time: {time() - begin_time:.2f} seconds")
 
-   
-    print(f'\n Exaluating trained VAE on validation set')
+    print(f'\n Evaluating trained VAE on validation set')
     val_losses = []
     hi_val = []
     for val_batch in val_dataset:
         x_recon_val, mean_val, logvar_val, z = vae(val_batch, training=False)
-        print(f'\n Validation HI:')
-        val_health = compute_health_indicator(val_batch, x_recon_val, target_rows=batch_size, num_features=num_features).numpy()
+        val_health = compute_health_indicator(val_batch, x_recon_val, target_rows=target_rows, num_features=num_features).numpy()
         hi_val.append(val_health)
-        if tf.size(val_health) > 0:  # skip empty returns if any
-            val_loss_batch = vae_loss(val_batch, x_recon_val, mean_val, logvar_val, val_health,
-                                        reloss_coeff, klloss_coeff, moloss_coeff)
-            val_losses.append(val_loss_batch.numpy())
-    val_loss = np.mean(val_losses)
-    hi_val = np.array(hi_val)
-    hi_val = hi_val.reshape(-1, batch_size)
-    print(f'\n Validation eval complete, \n val_loss = {val_loss} \t type = {type(val_loss)}, \n HI_val = {hi_val}, \n shape HI_val = {hi_val.shape}')
+        val_loss_batch = vae_loss(val_batch, x_recon_val, mean_val, logvar_val, val_health,
+                                  reloss_coeff, klloss_coeff, moloss_coeff)
+        val_losses.append(val_loss_batch.numpy())
+    val_loss = np.mean(val_losses) if val_losses else np.nan
+    hi_val = np.array(hi_val).reshape(-1, target_rows) if hi_val else np.array([])
 
-    print(f'\n Exaluating trained VAE on training set')
+    print(f'\n Evaluating trained VAE on training set')
     train_losses = []
     hi_train = []
-    for train_batch in train_dataset:
+    # Use a smaller batch size or disable drop_remainder for evaluation
+    eval_train_dataset = tf.data.Dataset.from_tensor_slices(sample_data).batch(10, drop_remainder=False)
+    for train_batch in eval_train_dataset:
         x_recon_train, mean_train, logvar_train, z = vae(train_batch, training=False)
-        print(f'\n Training batch HI:')
-        train_health = compute_health_indicator(train_batch, x_recon_train, target_rows=batch_size, num_features=num_features)
-        print(f'\n HI for current batch: \n shape = {train_health.shape}')
+        train_health = compute_health_indicator(train_batch, x_recon_train, target_rows=target_rows, num_features=num_features).numpy()
         hi_train.append(train_health)
-        if tf.size(train_health) > 0:  # skip empty returns if any
-            train_loss_batch = vae_loss(train_batch, x_recon_train, mean_train, logvar_train, train_health,
-                                        reloss_coeff, klloss_coeff, moloss_coeff)
-            train_losses.append(train_loss_batch.numpy())
-    train_loss = np.mean(train_losses)
-    hi_train = np.array(hi_train)
-    #hi_train = np.concatenate(hi_train, axis=0)
-    hi_train.reshape((-1, batch_size))
+        train_loss_batch = vae_loss(train_batch, x_recon_train, mean_train, logvar_train, train_health,
+                                    reloss_coeff, klloss_coeff, moloss_coeff)
+        train_losses.append(train_loss_batch.numpy())
+    train_loss = np.mean(train_losses) if train_losses else np.nan
+    hi_train = np.array(hi_train).reshape(-1, target_rows) if hi_train else np.array([])
+
     print(f'\n Training eval complete, \n train_loss = {train_loss} \t type = {type(train_loss)}, \n HI_train = {hi_train}, \n shape HI_train = {hi_train.shape}')
 
-    print(f'\n Exaluating trained VAE on test set')
+    print(f'\n Evaluating trained VAE on test set')
     test_losses = []
     hi_test = []
     for test_batch in test_dataset:
         x_recon_test, mean_test, logvar_test, z = vae(test_batch, training=False)
-        print(f'\n Test HI:')
-        test_health = compute_health_indicator(test_batch, x_recon_test, target_rows=batch_size, num_features=num_features)
+        test_health = compute_health_indicator(test_batch, x_recon_test, target_rows=target_rows, num_features=num_features).numpy()
         hi_test.append(test_health)
-        if tf.size(test_health) > 0:  # skip empty returns if any
-            test_loss_batch = vae_loss(test_batch, x_recon_test, mean_test, logvar_test, test_health,
-                                        reloss_coeff, klloss_coeff, moloss_coeff)
-            test_losses.append(test_loss_batch.numpy())
-    test_loss = np.mean(test_losses)
-    hi_test = np.array(hi_test)
-    hi_test = hi_test.reshape(-1, batch_size)
+        test_loss_batch = vae_loss(test_batch, x_recon_test, mean_test, logvar_test, test_health,
+                                   reloss_coeff, klloss_coeff, moloss_coeff)
+        test_losses.append(test_loss_batch.numpy())
+    test_loss = np.mean(test_losses) if test_losses else np.nan
+    hi_test = np.array(hi_test).reshape(-1, target_rows) if hi_test else np.array([])
+
     print(f'\n Test eval complete, \n test_loss = {test_loss} \t type = {type(test_loss)}, \n HI_test = {hi_test}, \n shape HI_test = {hi_test.shape}')
 
     losses = [train_loss, test_loss, val_loss]
-
-
     return hi_train, hi_test, hi_val, vae, epoch_losses, losses
-
 
 
 ''' HI calculator based on reconstruction errors, 
