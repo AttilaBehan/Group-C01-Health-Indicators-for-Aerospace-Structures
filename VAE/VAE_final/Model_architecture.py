@@ -25,18 +25,18 @@ class VAE(tf.keras.Model):
         self.encoder = tf.keras.Sequential([
             tf.keras.layers.InputLayer(shape=(timesteps_per_batch, n_features)),
             # LSTM processes sequences and returns last output
-            tf.keras.layers.LSTM(hidden_1, activation='tanh', kernel_initializer=initializer),
+            tf.keras.layers.LSTM(int(hidden_1), activation='tanh', kernel_initializer=initializer, return_sequences = False),
             # Output mean and log-variance of latent space
-            tf.keras.layers.Dense(hidden_2 * 2, kernel_initializer=initializer),
+            tf.keras.layers.Dense(int(hidden_2) * 2, kernel_initializer=initializer),
         ])
 
 
         # Decoder Network
             # Takes latent space (hidden_2) as input, then reconstructs by reversing Encoder layers
         self.decoder = tf.keras.Sequential([
-            tf.keras.layers.InputLayer(shape=(hidden_2,)),
+            tf.keras.layers.InputLayer(shape=(int(hidden_2),)),
             # Expand latent vector to LSTM input size
-            tf.keras.layers.Dense(hidden_1, activation='relu', kernel_initializer=initializer),
+            tf.keras.layers.Dense(int(hidden_1), activation='relu', kernel_initializer=initializer),
             # Reshape to (batch, timesteps, hidden_1) for LSTM
             tf.keras.layers.RepeatVector(timesteps_per_batch),  # Repeats z `timesteps` times
             # LSTM reconstructs sequences

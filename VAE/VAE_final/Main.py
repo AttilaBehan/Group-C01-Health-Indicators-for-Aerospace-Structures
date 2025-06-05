@@ -143,8 +143,13 @@ if __name__ == "__main__" and train_once:
     vae_train_data, vae_scaler = VAE_merge_data_per_timestep(train_paths, expected_cols, target_rows)
 
     # Load expected colums of test data excluding time
+<<<<<<< HEAD
     df_test = pd.read_csv(test_path).drop(columns=['Time (Cycle)', 'Time (cycle)',], errors='ignore')
     df_val = pd.read_csv(val_path).drop(columns=['Time (Cycle)', 'Time (cycle)',], errors='ignore')
+=======
+    df_test = pd.read_csv(test_path).drop(columns='Time (cycle)')
+    df_val = pd.read_csv(val_path).drop(columns='Time (cycle)')
+>>>>>>> 890e81015c509f1dd7bfc924b5294bcc55cd26cf
     df_test = df_test[expected_cols]
     df_val = df_val[expected_cols]
 
@@ -201,8 +206,7 @@ if __name__ == "__main__" and optimizing:
     n_filepaths = len(all_paths)
 
     df_sample1 = pd.read_csv(all_paths[0])
-    expected_cols = list(df_sample1.columns)
-    expected_cols = expected_cols[1:]
+    expected_cols = ['Energy_Variance','Energy_Mean','Energy_P13','Counts_Variance','Energy_P10','Duration_Variance','Rise-Time_Mean']
     num_features = len(expected_cols)
     Training_his = []
     Testing_his = []
@@ -218,33 +222,35 @@ if __name__ == "__main__" and optimizing:
     # Use the decorator to automatically convert parameters proposed by optimizer to keyword arguments for objective funtion
     # [50, 8, 0.003, 550, 0.06, 1.6, 2.8] → hidden_1=50, batch_size=8, ...
     #@use_named_args(space)
-    while False:
+    to_optimize = True
+    while to_optimize == True:
         var = int(input("Select 1 to run Bayesian or 2 to run optuna optimization"))
         if var == 1:
-            VAE_optimize_hyperparameters(folder_store_hyperparameters, expected_cols, all_paths, n_calls_per_sample, target_rows, space, batch_size)
+            VAE_optimize_hyperparameters(folder_store_hyperparameters, expected_cols, all_paths, n_calls_per_sample, target_rows, space, batch_size, num_features)
             break
         if var == 2:
             optimize_hyperparameters_optuna(folder_store_hyperparameters, expected_cols, all_paths, n_calls_per_sample, target_rows, num_features)
             break
-    csv_data = pd.read_csv(os.path.join(os.path.dirname(os.path.abspath(__file__)),'hyperparameters-opt-samples.csv'))
-    # Loop through each test sample
-    for index, row in csv_data.iterrows():
-        params_str = row['params']
-        # Replace np.int64(x) or np.float64(x) with x
-        clean_params_str = re.sub(r'np\.(int64|float64)\((-?\d+\.?\d*)\)', r'\2', params_str)
-        # Parse the cleaned string
-        params = ast.literal_eval(clean_params_str)
+    if to_optimize == False:
+        csv_data = pd.read_csv(os.path.join(os.path.dirname(os.path.abspath(__file__)),'hyperparameters-opt-samples.csv'))
+        # Loop through each test sample
+        for index, row in csv_data.iterrows():
+            params_str = row['params']
+            # Replace np.int64(x) or np.float64(x) with x
+            clean_params_str = re.sub(r'np\.(int64|float64)\((-?\d+\.?\d*)\)', r'\2', params_str)
+            # Parse the cleaned string
+            params = ast.literal_eval(clean_params_str)
 
-        hidden_1 = params[0]
-        learning_rate = params[1]
-        epochs = params[2]
-        hidden_2 = params[3]
-        reloss_coeff = params[4]
-        klloss_coeff = params[5]
-        moloss_coeff = params[6]
-        panel = index  # Legacy naming
-        freq = None
-        file_type = None
+            hidden_1 = params[0]
+            learning_rate = params[1]
+            epochs = params[2]
+            hidden_2 = params[3]
+            reloss_coeff = params[4]
+            klloss_coeff = params[5]
+            moloss_coeff = params[6]
+            panel = index  # Legacy naming
+            freq = None
+            file_type = None
 
         # Leave-one-out split
         test_path = all_paths[index]
@@ -257,8 +263,8 @@ if __name__ == "__main__" and optimizing:
         vae_train_data, vae_scaler = VAE_merge_data_per_timestep(train_paths, expected_cols, target_rows)
 
         # Load expected colums of test data excluding time
-        df_test = pd.read_csv(test_path).drop(columns=['Time (Cycle)'])
-        df_val = pd.read_csv(val_path).drop(columns='Time (Cycle)')
+        df_test = pd.read_csv(test_path).drop(columns='Time (cycle)')
+        df_val = pd.read_csv(val_path).drop(columns='Time (cycle)')
         #expected_cols = ['Amplitude', 'Energy', 'Counts', 'Duration', 'RMS']
         df_test = df_test[expected_cols]
         df_val = df_val[expected_cols]
