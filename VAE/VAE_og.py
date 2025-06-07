@@ -61,7 +61,7 @@ target_rows = 1200
 
 # VAE merge data function and inputs for current dataset:
 target_rows = 1200
-num_features=14
+num_features=6
 hidden_2 = 64
 
 ''' Resampling test and validation data'''
@@ -168,13 +168,13 @@ def VAE_merge_data_per_timestep_new(sample_filenames, expected_cols, target_rows
             raise ValueError(f"{os.path.basename(path)} missing columns: {missing}")
         df = df[expected_cols]
 
-        include = ['Amplitude_Freq']
-        exclude = ['Rise', 'Energy', 'Duration', 'RMS', 'Count']
+        # include = ['Amplitude_Freq']
+        # exclude = ['Rise', 'Energy', 'Duration', 'RMS', 'Count']
 
-        pattern = f"({'|'.join(include)})(?!.*({'|'.join(exclude)}))"
+        # pattern = f"({'|'.join(include)})(?!.*({'|'.join(exclude)}))"
 
-        df_freq = df.loc[:, df.columns.str.contains(pattern, regex=True)]
-        df_resampled = resample_dataframe(df_freq, target_rows)
+        #df_freq = df.loc[:, df.columns.str.contains(pattern, regex=True)]
+        df_resampled = resample_dataframe(df, target_rows)
 
         # # Resample each feature independently
         # df_resampled = pd.DataFrame()
@@ -196,7 +196,7 @@ def VAE_merge_data_per_timestep_new(sample_filenames, expected_cols, target_rows
     data_scaled = scaler.fit_transform(data)
     print(f"✅ Data standardized, mean: {data_scaled.mean(axis=0)}, std: {data_scaled.std(axis=0)}")
 
-    return data_scaled, scaler
+    return data, scaler
 
 ''' Batching data (needed for LSTM and in general)'''
 
@@ -366,7 +366,7 @@ def load_trained_vae(model_path, timesteps_per_batch=None, n_features=None, hidd
 ''' HI calculator based on reconstruction errors, 
 
     per timestep health scores: detect degradation at specific times, allows to check for monotonicity (penalize health decreases over time in VAE_loss)'''
-def compute_health_indicator(x, x_recon, k=1.0, target_rows=1200, num_features=201):
+def compute_health_indicator(x, x_recon, k=1.0, target_rows=1200, num_features=6):
     ''' x, x_recon should have same shape and be 2D tensors
         k = sensitivity parameter (larger values penalize errors more)'''
     #print(f'x shape: {x.shape}')
@@ -521,6 +521,7 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
     # Track average loss per epoch
     epoch_losses = []
     for epoch in range(epochs):
+        #klloss_coeff = min(max(0,klloss_coeff*(2*(epoch-20)/epochs)), klloss_coeff)
         batch_losses = []
         relosses = []
         kllosses = []
@@ -550,6 +551,7 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
                 loss, reloss, klloss, fealoss = vae_loss(batch_data, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
             # computes gradients of loss w.r.t. all trainable weights in VAE
             gradients = tape.gradient(loss, vae.trainable_variables) # Returns list of gradients (one per layer/variable)
+            gradients, _ = tf.clip_by_global_norm(gradients, 1.0)  # Clip at 1.0
             # Debug: Check gradients
             if epoch % 10 == 0 and batch_num == 0:
                 grad_norms = [tf.norm(g).numpy() for g in gradients]
@@ -715,6 +717,12 @@ def evaluate_trained_VAE(hidden_1, hidden_2, vae_model_save_path, train_dataset,
     val_loss = np.mean(val_batch_losses)
 
     losses = [train_loss, test_loss, val_loss]
+
+    # row_mins = np.min(hi_train, axis=1, keepdims=True) 
+    # row_maxs = np.max(hi_train, axis=1, keepdims=True)  
+    # hi_train = (hi_train - row_mins) / (row_maxs - row_mins + 1e-8)  
+    # hi_test = (hi_test - np.min(hi_test)) / (np.max(hi_test) - np.min(hi_test) +1e-8)
+    # hi_val = (hi_val - np.min(hi_val)) / (np.max(hi_val) - np.min(hi_val) +1e-8)
 
     return losses, hi_train, hi_test, hi_val
 
@@ -1281,29 +1289,29 @@ def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data,
 
 train_once = True
 if __name__ == "__main__" and train_once:
-    # Variables:
     target_rows=1200
     hidden_1 = 210
-    batch_size = 30
-    learning_rate = 0.001
-    epochs = 5
+    batch_size = 40
+    learning_rate = 0.0001
+    epochs = 8
     reloss_coeff = 0.93
-    klloss_coeff = 0.05
+    klloss_coeff = 0.5
     moloss_coeff = 0.02
-    timesteps_per_batch = 20
+    timesteps_per_batch = 30
 
     vae_model_save_path = 'full_vae_model.keras'
 
     #expected_cols = ['Amplitude_Time: Mean','Amplitude_Time: Standard Deviation','Amplitude_Time: Root Amplitude','Amplitude_Time: Root Mean Square','Amplitude_Time: Root Sum of Squares','Amplitude_Time: Peak','Amplitude_Time: Skewness','Amplitude_Time: Kurtosis','Amplitude_Time: Crest factor','Amplitude_Time: Clearance factor','Amplitude_Time: Shape factor','Amplitude_Time: Impulse factor','Amplitude_Time: Maximum to minimum difference','Amplitude_Time: FM4','Amplitude_Time: Median','Energy_Time: Mean','Energy_Time: Standard Deviation','Energy_Time: Root Amplitude','Energy_Time: Root Mean Square','Energy_Time: Root Sum of Squares','Energy_Time: Peak','Energy_Time: Skewness','Energy_Time: Kurtosis','Energy_Time: Crest factor','Energy_Time: Clearance factor','Energy_Time: Shape factor','Energy_Time: Impulse factor','Energy_Time: Maximum to minimum difference','Energy_Time: Median']
     #expected_cols_freq = ['Energy_Freq: Mean Frequency','Energy_Freq: f2','Energy_Freq: f3','Energy_Freq: f4','Energy_Freq: f5','Energy_Freq: f6','Energy_Freq: f7','Energy_Freq: f8','Energy_Freq: f9','Energy_Freq: f10','Energy_Freq: f11','Energy_Freq: f12','Energy_Freq: f13','Energy_Freq: f14','Energy_Physics: Cumulative energy']
     feature_level_data_base_path = r"C:\Users\job\OneDrive - Delft University of Technology\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE\VAE_final\VAE_AE_DATA"
-    feature_level_data_base_path = r"c:\Users\naomi\OneDrive\Documents\Extracted_High_Features_data\Interpolated_to_equal_rows\ast_data\FFT_Morteza"
+    feature_level_data_base_path = r"c:\Users\naomi\OneDrive\Documents\Extracted_High_Features_data\Interpolated_to_equal_rows\ast_data\Optimal\FFT_"
     all_paths = glob.glob(feature_level_data_base_path + "/*.csv")
     n_filepaths = len(all_paths)
 
     df_sample1 = pd.read_csv(all_paths[0])
     expected_cols = list(df_sample1.columns)
-    expected_cols = expected_cols[1:]
+    expected_cols = expected_cols[:6]
+    print(f"cols {expected_cols}")
     #num_features = len(expected_cols)
     # Leave-one-out split
     test_path = all_paths[2]
@@ -1321,22 +1329,20 @@ if __name__ == "__main__" and train_once:
 
     # Load expected colums of test data excluding time
     df_test = pd.read_csv(test_path)
-    df_test = df_test.drop(df_test.columns[0], axis=1)
     df_val = pd.read_csv(val_path)
-    df_val = df_val.drop(df_val.columns[0], axis=1)
     df_test = df_test[expected_cols]
     df_val = df_val[expected_cols]
 
-    include = ['Amplitude_Freq']
-    exclude = ['Rise', 'Energy', 'Duration', 'RMS', 'Count']
+    # include = ['Amplitude_Freq']
+    # exclude = ['Rise', 'Energy', 'Duration', 'RMS', 'Count']
 
-    pattern = f"({'|'.join(include)})(?!.*({'|'.join(exclude)}))"
+    # pattern = f"({'|'.join(include)})(?!.*({'|'.join(exclude)}))"
 
-    df_freq_test = df_test.loc[:, df_test.columns.str.contains(pattern, regex=True)]
-    df_test_resampled = resample_dataframe(df_freq_test, target_rows)
+    # df_freq_test = df_test.loc[:, df_test.columns.str.contains(pattern, regex=True)]
+    df_test_resampled = resample_dataframe(df_test, target_rows)
 
-    df_freq_val = df_val.loc[:, df_val.columns.str.contains(pattern, regex=True)]
-    df_val_resampled = resample_dataframe(df_freq_val, target_rows)
+    # df_freq_val = df_val.loc[:, df_val.columns.str.contains(pattern, regex=True)]
+    df_val_resampled = resample_dataframe(df_val, target_rows)
 
     # df_test_resampled = pd.DataFrame()
     # df_val_resampled = pd.DataFrame()
@@ -1355,14 +1361,14 @@ if __name__ == "__main__" and train_once:
     vae_val_data = df_val_resampled.values
 
     # Standardize val and test data
-    vae_test_data = vae_scaler.transform(vae_test_data)
-    vae_val_data = vae_scaler.transform(vae_val_data)
+    # vae_test_data = vae_scaler.transform(vae_test_data)
+    # vae_val_data = vae_scaler.transform(vae_val_data)
 
     test_arrays = [vae_test_data]
     val_arrays = [vae_val_data]
 
-    val_arrays = [vae_scaler.transform(arr) for arr in val_arrays]
-    test_arrays = [vae_scaler.transform(arr) for arr in test_arrays]
+    # val_arrays = [vae_scaler.transform(arr) for arr in val_arrays]
+    # test_arrays = [vae_scaler.transform(arr) for arr in test_arrays]
 
     # Split data into batches:
     train_dataset = create_batches_from_arrays_list(train_arrays, timesteps_per_batch, batch_size)
@@ -1374,6 +1380,14 @@ if __name__ == "__main__" and train_once:
 
     losses, hi_train, hi_test, hi_val = evaluate_trained_VAE(hidden_1, hidden_2, vae_model_save_path, train_dataset, val_dataset, test_dataset, timesteps_per_batch, num_features, reloss_coeff, klloss_coeff, moloss_coeff)
     
+    hi_all = [hi_train, hi_test, hi_val]
+
+    print(f'shapes of HIs test train val: {hi_test.shape}, {hi_train.shape}, {hi_val.shape}')
+
+    hi_all = np.vstack(hi_all)
+    ftn, monotonicity, trendability, prognosability, error = fitness(hi_all)
+    print(f'fitness of all HIs: {ftn} \t Mo: {monotonicity} \t Tr: {trendability} \t Pr: {prognosability} \t Error: {error}')
+
     print(f'shape of hi_train[0]: {hi_train[0].shape}')
     x_range = hi_train[0].shape[0]
     print(f'x_range = {x_range}')
@@ -1402,7 +1416,6 @@ if __name__ == "__main__" and train_once:
     plt.title('Test panel = 2')
     plt.xlabel('Lifetime (%)')
     plt.ylabel('HI')
-    plt.legend()
     plt.savefig(filepath)
     plt.show()
 
@@ -1425,9 +1438,10 @@ if __name__ == "__main__" and train_once:
             ax.plot(x, hi_val.reshape((-1,1)), color=colors[i], label='Sample 7 (val)')
         if i>6:
             ax.plot(x, hi_train[i-2].reshape(-1,1), color=colors[i], label=f'Sample {i+1}') 
+        ax.set_xlabel('Lifetime (%)')
 
     # Add a single legend and big title for all subplots
-    fig.legend(loc='center', bbox_to_anchor=(0.5, 0.08), ncol=2)
+    #fig.legend(loc='center', bbox_to_anchor=(0.5, 0.08), ncol=2)
     fig.suptitle(f'HIs constructed by VAE')
     plt.tight_layout()
     plt.savefig(filepath)
