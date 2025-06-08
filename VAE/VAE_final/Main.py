@@ -180,7 +180,7 @@ if __name__ == "__main__" and optimizing:
     n_filepaths = len(all_paths)
 
     df_sample1 = pd.read_csv(all_paths[0])
-    expected_cols = ['Energy_Variance','Energy_Mean','Energy_P13','Counts_Variance','Energy_P10','Duration_Variance','Rise-Time_Mean']
+    expected_cols = ['Energy_Variance','Energy_Mean','Energy_P13','Counts_Variance','Energy_P10','Duration_Variance']
     num_features = len(expected_cols)
     Training_his = []
     Testing_his = []
