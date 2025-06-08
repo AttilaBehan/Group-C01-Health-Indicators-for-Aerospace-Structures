@@ -13,8 +13,8 @@ class VAE(tf.keras.Model):
         # Storing model parameters
         self.timesteps = timesteps_per_batch
         self.n_features = n_features
-        self.hidden_1 = hidden_1
-        self.hidden_2 = hidden_2
+        self.hidden_1 = int(hidden_1)
+        self.hidden_2 = int(hidden_2)
 
         # Initialization of weights (to improve stability of training, with seed for reproducability)
         initializer = tf.keras.initializers.GlorotUniform(seed=VAE_Seed.vae_seed)

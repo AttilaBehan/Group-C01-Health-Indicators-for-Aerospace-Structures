@@ -75,13 +75,13 @@ def enhanced_callback(res):
 
 # Define space for Bayesian hyperparameter optimiation 
 space = [
-        Integer(70, 140, name='hidden_1'),
-        Real(0.001, 0.01, name='learning_rate'),
-        Integer(500, 1000, name='epochs'),
-        Integer(8, 32, name="hidden_2"),
-        Real(0.05, 0.6, name='reloss_coeff'),
-        Real(0.1, 1.0, name='klloss_coeff'),
-        Real(2.6, 4, name='moloss_coeff')
+        Integer(30, 120, name='hidden_1'),
+        Real(10e-5, 10e-3, name='learning_rate'),
+        Integer(20, 800, name='epochs'),
+        Integer(6, 64, name="hidden_2"),
+        Real(0.02, 0.5, name='reloss_coeff'),
+        Real(0.8, 2.0, name='klloss_coeff'),
+        Real(0.8, 3.5, name='moloss_coeff')
     ]
 
 # Use the decorator to automatically convert parameters to keyword arguments
@@ -122,8 +122,8 @@ if __name__ == "__main__" and train_once:
     vae_train_data, vae_scaler = VAE_merge_data_per_timestep(train_paths, expected_cols, target_rows)
 
     # Load expected colums of test data excluding time
-    df_test = pd.read_csv(test_path).drop(columns='')
-    df_val = pd.read_csv(val_path).drop(columns='')
+    df_test = pd.read_csv(test_path).drop(columns='Unnamed: 0')
+    df_val = pd.read_csv(val_path).drop(columns='Unnamed: 0')
     df_test = df_test[expected_cols]
     df_val = df_val[expected_cols]
 
@@ -172,8 +172,8 @@ optimizing = True
 if __name__ == "__main__" and optimizing:
     folder_store_hyperparameters = os.path.dirname(os.path.abspath(__file__))
 
-    target_rows = 201
-    batch_size = 10
+    target_rows = 1200
+    batch_size = 40
     n_calls_per_sample = 12
     feature_level_data_base_path = r"VAE_AE_DATA"
     all_paths = glob.glob(feature_level_data_base_path + "/*.csv")
@@ -237,8 +237,8 @@ if __name__ == "__main__" and optimizing:
         vae_train_data, vae_scaler = VAE_merge_data_per_timestep(train_paths, expected_cols, target_rows)
 
         # Load expected colums of test data excluding time
-        df_test = pd.read_csv(test_path).drop(columns='')
-        df_val = pd.read_csv(val_path).drop(columns='')
+        df_test = pd.read_csv(test_path).drop(columns='Unnamed: 0')
+        df_val = pd.read_csv(val_path).drop(columns='Unnamed: 0')
         #expected_cols = ['Amplitude', 'Energy', 'Counts', 'Duration', 'RMS']
         df_test = df_test[expected_cols]
         df_val = df_val[expected_cols]
