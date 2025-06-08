@@ -61,8 +61,8 @@ target_rows = 1200
 
 # VAE merge data function and inputs for current dataset:
 target_rows = 1200
-num_features=6
-hidden_2 = 64
+num_features=3
+hidden_2 = 8
 
 ''' Resampling test and validation data'''
 def resample_dataframe(df, target_rows):
@@ -234,7 +234,7 @@ def create_batches_from_arrays_list(array_list, timesteps, batch_size, shuffle=F
 # Defines Keras VAE model
 class VAE(tf.keras.Model):
     # Contructor method which initializes VAE, hidden_2 = size of latent space, usually smaller than hidden_1
-    def __init__(self, timesteps_per_batch, n_features, hidden_1, hidden_2=64, dropout_rate=0.2, **kwargs):
+    def __init__(self, timesteps_per_batch, n_features, hidden_1, hidden_2=8, dropout_rate=0.2, **kwargs):
         # Calls parent class constructor to initialize model properly
         super(VAE, self).__init__(**kwargs)  # Pass kwargs to parent
 
@@ -461,7 +461,7 @@ def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coef
     return loss
 
 ''' Apply the train_step() function to train the VAE'''
-def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=64, target_rows=1200, patience=50, min_delta=1e-4, timesteps_per_batch=10, model_save_path='vae_model.weights.keras', final_model_save_path='full_vae_model.keras'):
+def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=8, target_rows=1200, patience=50, min_delta=1e-4, timesteps_per_batch=10, model_save_path='vae_model.weights.keras', final_model_save_path='full_vae_model.keras'):
     """
         Trains VAE on sample_data with inbuilt early stopping when validation diverges, then evaluates VAE on test_data
     
@@ -577,35 +577,37 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
             vae.save(final_model_save_path)
         #print(f"New best model saved to {final_model_save_path}")
 
-        # # Validation 
-        # val_batch_losses = []
-        # for val_batch_num, val_batch in enumerate(val_dataset):
-        #     with tf.GradientTape() as tape:
-        #         # FWD pass: bathc_xs passed through VAE, VAE returns reconstructed input, latent distribution parameters, sampled latent vector (z)
-        #         x_recon, mean, logvar, z = vae(val_batch, training=False) # Training = true makes sure dropout layers are off
-        #         # Computes HI from prev defined function
-        #         #print(f'val_batch shape = {val_batch.shape} \n reconstructed batch shape {x_recon.shape}')
-        #         health = compute_health_indicator(val_batch, x_recon, target_rows=timesteps_per_batch, num_features=num_features) # output size = (batch_size, timesteps)
-        #         #print(f'validation health for batch {health}')
-        #         # Computes loss from prev defined function (output = scalar loss value, averaged over batch)
-        #         loss, reloss, klloss, fealoss = vae_loss(val_batch, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
-        #     val_batch_losses.append(loss.numpy())
-        #     #print(f'Val loss of batch {val_batch_num + 1} computed')
-        #     if (val_batch_num+1) >= num_val_batches:  # Explicit stop after all batches have been seen
-        #         break
+        # Validation 
+        val_batch_losses = []
+        for val_batch_num, val_batch in enumerate(val_dataset):
+            with tf.GradientTape() as tape:
+                # FWD pass: bathc_xs passed through VAE, VAE returns reconstructed input, latent distribution parameters, sampled latent vector (z)
+                x_recon, mean, logvar, z = vae(val_batch, training=False) # Training = true makes sure dropout layers are off
+                # Computes HI from prev defined function
+                #print(f'val_batch shape = {val_batch.shape} \n reconstructed batch shape {x_recon.shape}')
+                health = compute_health_indicator(val_batch, x_recon, target_rows=timesteps_per_batch, num_features=num_features) # output size = (batch_size, timesteps)
+                #print(f'validation health for batch {health}')
+                # Computes loss from prev defined function (output = scalar loss value, averaged over batch)
+                loss, reloss, klloss, fealoss = vae_loss(val_batch, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
+            val_batch_losses.append(loss.numpy())
+            #print(f'Val loss of batch {val_batch_num + 1} computed')
+            if (val_batch_num+1) >= num_val_batches:  # Explicit stop after all batches have been seen
+                break
         
-        # epoch_val_loss = np.mean(val_batch_losses)
-        # if epoch_val_loss < best_val_loss + min_delta:
-        #     best_val_loss = epoch_val_loss
-        #     epochs_without_improvement = 0
-        #     # # Save best model
-        #     # vae.save_weights(model_save_path)
-        #     # print(f"New best model saved to {model_save_path} (val loss: {epoch_val_loss:.3f})")
-        # else:
-        #     epochs_without_improvement += 1
-        #     if epochs_without_improvement > patience:
-        #         print(f"Early stopping at epoch {epoch} (Val loss no improvement for {patience} epochs)")
-        #         break
+        epoch_val_loss = np.mean(val_batch_losses)
+        if epoch_val_loss < best_val_loss + min_delta:
+            best_val_loss = epoch_val_loss
+            epochs_without_improvement = 0
+            # # Save best model
+            # vae.save_weights(model_save_path)
+            # print(f"New best model saved to {model_save_path} (val loss: {epoch_val_loss:.3f})")
+        else:
+            epochs_without_improvement += 1
+            #if epochs_without_improvement > patience:
+            if epochs_without_improvement > 18:
+                print(f"Early stopping at epoch {epoch} (Val loss no improvement for {19} epochs)")
+                epoch = epoch + 1
+                break
 
     # Load best model weights with verification
     try:
@@ -631,7 +633,7 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
         vae.save(final_model_save_path)  # Saves everything
 
 
-    return vae, epoch_losses
+    return vae, epoch_losses, epoch
 
 def evaluate_trained_VAE(hidden_1, hidden_2, vae_model_save_path, train_dataset, val_dataset, test_dataset, timesteps_per_batch, num_features, reloss_coeff, klloss_coeff, moloss_coeff):
     print(f'\n Evaluating trained VAE...')
@@ -999,7 +1001,7 @@ def plot_images(SP_Method_file_type, dir, panels, freqs, seed=VAE_Seed.vae_seed)
 
     # Adjust spacing between subplots and save figure
     plt.tight_layout()
-    plt.savefig(filedir)
+    plt.savefig(filedir, dpi=300)
 
 def VAE_save_results(fitness_all, fitness_test, panel, freq, SP_Method_file_type, dir, freqs, seed=VAE_Seed.vae_seed):
     """
@@ -1184,12 +1186,12 @@ def plot_HI_graph(HI_all, dataset_name, sp_method_name, folder_output, show_plot
     # Save the figure to file
     filename = f'HI_graphs_VAE_{dataset_name}_{sp_method_name}.png'
     file_path = os.path.join(folder_output, filename)
-    plt.savefig(file_path)
+    plt.savefig(file_path, dpi=300)
     if show_plot:
         plt.show()
 
 ''' TRAINS VAE USING HYPERPARAMETERS WITH LOWEST ERROR'''
-def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data, vae_val_data, vae_test_data, expected_cols, target_rows, num_features, hidden_2=64):
+def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data, vae_val_data, vae_test_data, expected_cols, target_rows, num_features, hidden_2=8):
     # Load hyperparameters
     df = pd.read_csv(opt_hyperparam_filepath)
     columns=["test_panel_id", "params", "error"]
@@ -1285,18 +1287,213 @@ def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data,
         results[i*n_filepaths:i*n_filepaths+n_filepaths,:] = hi_full
     return results, losses  # Results has columns in time and rows for sample, results for changing test panel stacked, losses stacked for changing test panel
 
+def sort_hi_test_train_val(hi_test, hi_train, hi_val, t=0):
+    if t!=0:
+        hi_test = hi_test[t:]
+        hi_train = hi_train[:,t:]
+        hi_val = hi_val[t:]
+        time_arr = np.linspace(0,100,hi_train.shape[1])
+    return hi_train, hi_test, hi_val, time_arr
+
+def reconstruct_hi_index_order(train_data, test_data, val_data, test_idx):
+    """
+    Reconstructs the full ordered dataset (12, m) from training, test, and validation splits.
+
+    Parameters:
+        train_data (ndarray): (10, m) array of training samples in numerical index order.
+        test_data (ndarray): (m,) array for test sample.
+        val_data (ndarray): (m,) array for validation sample.
+        test_idx (int): index of the test sample (0-11)
+
+    Returns:
+        full_data (ndarray): (12, m) array with samples ordered 0 to 11
+    """
+    num_total_samples = 12
+    m = train_data.shape[1]
+    full_data = np.zeros((num_total_samples, m))
+
+    val_idx = (test_idx + 4) % num_total_samples
+
+    # All sample indices
+    all_indices = list(range(num_total_samples))
+    # Remaining indices after removing test and val
+    train_indices = [i for i in all_indices if i not in [test_idx, val_idx]]
+
+    # Fill in the training data
+    for i, idx in enumerate(train_indices):
+        full_data[idx] = train_data[i]
+
+    # Fill in test and validation data
+    full_data[test_idx] = test_data
+    full_data[val_idx] = val_data
+
+    return full_data
+
+def plot_all_hi_graphs_LOOCV(hi_arr_lst, save_path, n_plot_rows, n_plot_col, SP_method, show_plot=True):
+    n_samples = hi_arr_lst[0].shape[0]
+    n_timesteps = hi_arr_lst[0].shape[1]
+    time_arr = np.linspace(0,100,n_timesteps)
+    colors = ['b', 'r', 'g', 'c', 'm', 'y', 'orange', 'purple', 'brown', 'pink', 'gray', 'lime', 'violet', 'yellow']
+
+    # Create grid of subplots
+    fig, axes = plt.subplots(n_plot_rows, n_plot_col, figsize=(12, 15))
+
+    # Flatten the axes array for simple iteration
+    axes = axes.flatten()
+    # Plot each row of y against x
+    for i, ax in enumerate(axes):
+        hi_arr = hi_arr_lst[i]
+        if i==0:
+            for j in range(n_samples):  # Plot all rows/samples
+                ax.plot(time_arr, hi_arr[j,:], color=colors[j], label=f'Sample {j+1}', marker=None)
+        else: 
+            for j in range(n_samples):  # Plot all rows/samples
+                ax.plot(time_arr, hi_arr[j,:], color=colors[j], marker=None)
+        ax.plot(time_arr, hi_arr[i,:], color=colors[i], marker=None)
+        ax.set_xlabel('% of Lifetime')
+        ax.set_ylabel('HI')
+        #ax.set_ylim(0,1.1)
+        ax.set_title(f"Test sample {i+1}")
+        ax.grid(True)
+
+    # Add a single legend and big title for all subplots
+    fig.legend(loc='lower center', bbox_to_anchor=(0.5, 0.0), ncol=4)
+    fig.suptitle(f'HIs constructed by VAE using {SP_method} features')
+    fig.subplots_adjust(top=0.92, bottom=0.14, hspace=0.4, wspace=0.3)
+
+    # Save the figure to file
+    plt.savefig(save_path, dpi=300)
+    if show_plot:
+        plt.show()
+
+def plot_grid_of_individual_hi_lines_graphs(hi_arr, save_path, n_plot_rows, n_plot_col, SP_method, test_idx, show_plot=True):
+    n_samples = hi_arr.shape[0]
+    n_timesteps = hi_arr.shape[1]
+    time_arr = np.linspace(0,100,n_timesteps)
+    colors = ['b', 'r', 'g', 'c', 'm', 'y', 'orange', 'purple', 'brown', 'pink', 'gray', 'lime', 'violet', 'yellow']
+
+    # Create grid of subplots
+    fig, axes = plt.subplots(n_plot_rows, n_plot_col, figsize=(12, 15))
+
+    # Flatten the axes array for simple iteration
+    axes = axes.flatten()
+    # Plot each row of y against x
+    for i, ax in enumerate(axes):
+        ax.plot(time_arr, hi_arr[i,:], color=colors[i], label=f'Sample {i+1}', marker=None)
+        ax.set_xlabel('% of Lifetime')
+        ax.set_ylabel('HI')
+        ax.set_ylim(0.45,1.05)
+        ax.grid(True)
+
+    # Add a single legend and big title for all subplots
+    #fig.legend(loc='outside lower center', ncol=4)
+    fig.legend(loc='lower center', bbox_to_anchor=(0.5, 0.0), ncol=4)
+    fig.suptitle(f'HIs constructed by VAE using {SP_method} features (Test sample {test_idx+1})')
+    fig.subplots_adjust(top=0.92, bottom=0.14, hspace=0.4, wspace=0.3)
+
+    # Save the figure to file
+    plt.savefig(save_path, dpi=300)
+    if show_plot:
+        plt.show()
+
+def plot_single_HI_graph(hi_arr, save_path, SP_method, test_idx, show_plot=True):
+    n_samples = hi_arr.shape[0]
+    n_timesteps = hi_arr.shape[1]
+    time_arr = np.linspace(0,100,n_timesteps)
+    colors = ['b', 'r', 'g', 'c', 'm', 'y', 'orange', 'purple', 'brown', 'pink', 'gray', 'lime', 'violet', 'yellow']
+
+    plt.figure(figsize=(9,6))
+    for i in range(n_samples):
+        plt.plot(time_arr, hi_arr[i,:], color=colors[i], label=f'Sample {i+1}', marker=None)
+    plt.xlabel('% of Lifetime')
+    plt.ylabel('HI')
+    plt.grid(True)
+    plt.title(f'HIs constructed by VAE using {SP_method} features (Test sample {test_idx+1})')
+    plt.legend(loc='lower center', bbox_to_anchor=(0.5, -0.3), ncol=4)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300)
+    if show_plot:
+        plt.show()
+    
+def plot_loss_history(loss_history_lst, save_path, SP_method, show_plot=True):
+    colors = ['b', 'r', 'g', 'c', 'm', 'y', 'orange', 'purple', 'brown', 'pink', 'gray', 'lime', 'violet', 'yellow']
+    n_samples = len(loss_history_lst)
+    plt.figure(figsize=(9,6))
+    for i in range(n_samples):
+        loss_history = loss_history_lst[i]
+        n_epochs = len(loss_history)
+        epochs = np.arange(0,n_epochs,1)
+        plt.plot(epochs, loss_history, color=colors[i], label=f'Test {i+1}, Val {(i+1+4)%12}')
+    plt.xlabel('Epoch number')
+    plt.ylabel('Training loss')
+    plt.title(f'VAE loss history ({SP_method})')
+    plt.grid(True)
+    plt.legend(loc='lower center', bbox_to_anchor=(0.5, -0.3), ncol=4, title='Test and Validation samples:')
+    plt.savefig(save_path, dpi=300)
+    if show_plot:
+        plt.show()
+
+def plot_loss_history_and_fitness_history(loss_history_single, fitness_history, save_path, SP_method, show_plot=True):
+    colors = ['b', 'r', 'g', 'c', 'm', 'y', 'orange', 'purple', 'brown', 'pink', 'gray', 'lime', 'violet', 'yellow']
+    n_epochs = len(loss_history_single)
+    epochs = np.arange(0,n_epochs,1)
+    # plt.plot(epochs, loss_history_single, color='g', label=f'Total loss')
+    # plt.plot(epochs, fitness_history, color='b', label=f'HI fitness')
+    # plt.xlabel('Epoch number')
+    # plt.ylabel('Training loss')
+    # plt.title(f'VAE loss history ({SP_method})')
+    # plt.grid(True)
+    # plt.legend(loc='lower center', bbox_to_anchor=(0.5, -0.3), ncol=4, title='Test and Validation samples:')
+    # plt.savefig(save_path, dpi=300)
+    # if show_plot:
+    #     plt.show()
+    # Create figure and axis
+    fig, ax1 = plt.subplots(figsize=(9, 6))
+
+    # Plot First axis
+    color1 = 'tab:blue'
+    ax1.plot(epochs, loss_history_single, color=color1, label='Total loss')
+    ax1.set_xlabel('Epochs')
+    ax1.set_ylabel('Training loss', color=color1)
+    ax1.tick_params(axis='y', labelcolor=color1)
+
+    # Create second y-axis
+    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+    color2 = 'tab:red'
+    ax2.plot(epochs, fitness_history, color=color2, label='HI fitness')
+    ax2.set_ylabel('Fitness', color=color2)
+    ax2.tick_params(axis='y', labelcolor=color2)
+
+    fig.suptitle(f'VAE loss history ({SP_method})')
+    ax1.grid(True)
+    plt.legend(loc='lower center', bbox_to_anchor=(0.5, -0.3))
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300)
+    if show_plot:
+        plt.show()
+    
+
+
 ''' Trying out full training and optimization run'''
 
 train_once = True
 if __name__ == "__main__" and train_once:
+
+    save_folder_hi_graphs = r"c:\Users\naomi\OneDrive\Documents\Low_Features\HI_graphs_report"
+    LOOCV_hi_all_lst = []
+    LOOCV_fitness_lst = []
+    LOOCV_loss_history = []
+    epoch_stopping = np.zeros((12))
+
     target_rows=1200
-    hidden_1 = 210
+    hidden_1 = 40
     batch_size = 40
     learning_rate = 0.0001
-    epochs = 8
-    reloss_coeff = 0.93
-    klloss_coeff = 0.5
-    moloss_coeff = 0.02
+    epochs = 20  # final = 8
+    reloss_coeff = 0.9
+    klloss_coeff = 0.9
+    moloss_coeff = 0.9
     timesteps_per_batch = 30
 
     vae_model_save_path = 'full_vae_model.keras'
@@ -1305,147 +1502,188 @@ if __name__ == "__main__" and train_once:
     #expected_cols_freq = ['Energy_Freq: Mean Frequency','Energy_Freq: f2','Energy_Freq: f3','Energy_Freq: f4','Energy_Freq: f5','Energy_Freq: f6','Energy_Freq: f7','Energy_Freq: f8','Energy_Freq: f9','Energy_Freq: f10','Energy_Freq: f11','Energy_Freq: f12','Energy_Freq: f13','Energy_Freq: f14','Energy_Physics: Cumulative energy']
     feature_level_data_base_path = r"C:\Users\job\OneDrive - Delft University of Technology\Documents\GitHub\Group-C01-Health-Indicators-for-Aerospace-Structures\VAE\VAE_final\VAE_AE_DATA"
     feature_level_data_base_path = r"c:\Users\naomi\OneDrive\Documents\Extracted_High_Features_data\Interpolated_to_equal_rows\ast_data\Optimal\FFT_"
+    SP_method = 'FFT'
     all_paths = glob.glob(feature_level_data_base_path + "/*.csv")
     n_filepaths = len(all_paths)
 
     df_sample1 = pd.read_csv(all_paths[0])
     expected_cols = list(df_sample1.columns)
-    expected_cols = expected_cols[:6]
+    expected_cols = expected_cols[6:]
     print(f"cols {expected_cols}")
-    #num_features = len(expected_cols)
-    # Leave-one-out split
-    test_path = all_paths[2]
-    #val_path_idx = (i+5)%(int(n_filepaths))
-    val_path = all_paths[6]
-    #val_id = all_ids[val_path_idx]
-    train_paths = [p for j, p in enumerate(all_paths) if j != 2 and j!=6]
+    num_features = len(expected_cols)
 
-    # Load and flatten (merge) training data csv files, resampling to 300 rows
-    vae_train_data, vae_scaler = VAE_merge_data_per_timestep_new(train_paths, expected_cols, target_rows)
+    for k in range(12):
+        #num_features = len(expected_cols)
+        # Leave-one-out split
+        test_idx = k
+        val_idx = (k + 4) % 12
+        add = (4*k+2)%16
+        epochs = 20 + add
 
-    n_train_paths = len(train_paths)
-    train_arrays = np.split(vae_train_data, n_train_paths)
-    print(f'shape of single sample train array = {train_arrays[0].shape}')
+        test_path = all_paths[test_idx]
+        #val_path_idx = (i+5)%(int(n_filepaths))
+        val_path = all_paths[val_idx]
+        #val_id = all_ids[val_path_idx]
+        train_paths = [p for j, p in enumerate(all_paths) if j != test_idx and j!=val_idx]
 
-    # Load expected colums of test data excluding time
-    df_test = pd.read_csv(test_path)
-    df_val = pd.read_csv(val_path)
-    df_test = df_test[expected_cols]
-    df_val = df_val[expected_cols]
+        # Load and flatten (merge) training data csv files, resampling to 300 rows
+        vae_train_data, vae_scaler = VAE_merge_data_per_timestep_new(train_paths, expected_cols, target_rows)
 
-    # include = ['Amplitude_Freq']
-    # exclude = ['Rise', 'Energy', 'Duration', 'RMS', 'Count']
+        n_train_paths = len(train_paths)
+        train_arrays = np.split(vae_train_data, n_train_paths)
+        print(f'shape of single sample train array = {train_arrays[0].shape}')
 
-    # pattern = f"({'|'.join(include)})(?!.*({'|'.join(exclude)}))"
+        # Load expected colums of test data excluding time
+        df_test = pd.read_csv(test_path)
+        df_val = pd.read_csv(val_path)
+        df_test = df_test[expected_cols]
+        df_val = df_val[expected_cols]
 
-    # df_freq_test = df_test.loc[:, df_test.columns.str.contains(pattern, regex=True)]
-    df_test_resampled = resample_dataframe(df_test, target_rows)
+        # include = ['Amplitude_Freq']
+        # exclude = ['Rise', 'Energy', 'Duration', 'RMS', 'Count']
 
-    # df_freq_val = df_val.loc[:, df_val.columns.str.contains(pattern, regex=True)]
-    df_val_resampled = resample_dataframe(df_val, target_rows)
+        # pattern = f"({'|'.join(include)})(?!.*({'|'.join(exclude)}))"
 
-    # df_test_resampled = pd.DataFrame()
-    # df_val_resampled = pd.DataFrame()
-    # for col in df_test.columns: # interpolates test data columns so they are sampe length as target rows of train data
-    #     original = df_test[col].values
-    #     og = df_val[col].values
-    #     x_original = np.linspace(0, 1, len(original))
-    #     x_val_original = np.linspace(0,1,len(og))
-    #     x_target = np.linspace(0, 1, target_rows)
-    #     interpolated = np.interp(x_target, x_original, original)
-    #     interp = np.interp(x_target, x_val_original, og)
-    #     df_test_resampled[col] = interpolated
-    #     df_val_resampled[col] = interp
+        # df_freq_test = df_test.loc[:, df_test.columns.str.contains(pattern, regex=True)]
+        df_test_resampled = resample_dataframe(df_test, target_rows)
 
-    vae_test_data = df_test_resampled.values
-    vae_val_data = df_val_resampled.values
+        # df_freq_val = df_val.loc[:, df_val.columns.str.contains(pattern, regex=True)]
+        df_val_resampled = resample_dataframe(df_val, target_rows)
 
-    # Standardize val and test data
-    # vae_test_data = vae_scaler.transform(vae_test_data)
-    # vae_val_data = vae_scaler.transform(vae_val_data)
+        # df_test_resampled = pd.DataFrame()
+        # df_val_resampled = pd.DataFrame()
+        # for col in df_test.columns: # interpolates test data columns so they are sampe length as target rows of train data
+        #     original = df_test[col].values
+        #     og = df_val[col].values
+        #     x_original = np.linspace(0, 1, len(original))
+        #     x_val_original = np.linspace(0,1,len(og))
+        #     x_target = np.linspace(0, 1, target_rows)
+        #     interpolated = np.interp(x_target, x_original, original)
+        #     interp = np.interp(x_target, x_val_original, og)
+        #     df_test_resampled[col] = interpolated
+        #     df_val_resampled[col] = interp
 
-    test_arrays = [vae_test_data]
-    val_arrays = [vae_val_data]
+        vae_test_data = df_test_resampled.values
+        vae_val_data = df_val_resampled.values
 
-    # val_arrays = [vae_scaler.transform(arr) for arr in val_arrays]
-    # test_arrays = [vae_scaler.transform(arr) for arr in test_arrays]
+        # Standardize val and test data
+        # vae_test_data = vae_scaler.transform(vae_test_data)
+        # vae_val_data = vae_scaler.transform(vae_val_data)
 
-    # Split data into batches:
-    train_dataset = create_batches_from_arrays_list(train_arrays, timesteps_per_batch, batch_size)
-    test_dataset = create_batches_from_arrays_list(test_arrays, timesteps_per_batch, batch_size)
-    val_dataset = create_batches_from_arrays_list(val_arrays, timesteps_per_batch, batch_size)
+        test_arrays = [vae_test_data]
+        val_arrays = [vae_val_data]
 
-    # Train model
-    vae, epoch_losses = VAE_train(train_dataset, val_dataset, test_dataset, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=64, timesteps_per_batch=timesteps_per_batch)
+        # val_arrays = [vae_scaler.transform(arr) for arr in val_arrays]
+        # test_arrays = [vae_scaler.transform(arr) for arr in test_arrays]
 
-    losses, hi_train, hi_test, hi_val = evaluate_trained_VAE(hidden_1, hidden_2, vae_model_save_path, train_dataset, val_dataset, test_dataset, timesteps_per_batch, num_features, reloss_coeff, klloss_coeff, moloss_coeff)
-    
-    hi_all = [hi_train, hi_test, hi_val]
+        # Split data into batches:
+        train_dataset = create_batches_from_arrays_list(train_arrays, timesteps_per_batch, batch_size)
+        test_dataset = create_batches_from_arrays_list(test_arrays, timesteps_per_batch, batch_size)
+        val_dataset = create_batches_from_arrays_list(val_arrays, timesteps_per_batch, batch_size)
 
-    print(f'shapes of HIs test train val: {hi_test.shape}, {hi_train.shape}, {hi_val.shape}')
+        # Train model
+        vae, epoch_losses, epoch_quit = VAE_train(train_dataset, val_dataset, test_dataset, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=8, timesteps_per_batch=timesteps_per_batch)
 
-    hi_all = np.vstack(hi_all)
-    ftn, monotonicity, trendability, prognosability, error = fitness(hi_all)
-    print(f'fitness of all HIs: {ftn} \t Mo: {monotonicity} \t Tr: {trendability} \t Pr: {prognosability} \t Error: {error}')
+        LOOCV_loss_history.append(epoch_losses)
 
-    print(f'shape of hi_train[0]: {hi_train[0].shape}')
-    x_range = hi_train[0].shape[0]
-    print(f'x_range = {x_range}')
+        epoch_stopping[k] = epoch_quit
 
-    #loaded_trained_vae = tf.keras.models.load_model('full_vae_model.h5')
+        losses, hi_train, hi_test, hi_val = evaluate_trained_VAE(hidden_1, hidden_2, vae_model_save_path, train_dataset, val_dataset, test_dataset, timesteps_per_batch, num_features, reloss_coeff, klloss_coeff, moloss_coeff)
+        
+        print(f'shapes of HIs test train val: {hi_test.shape}, {hi_train.shape}, {hi_val.shape}')
 
-    # # Print 
-    # print(f'Epoch losses: {epoch_losses}')
-    # print(f'\n HI_train shape: {hi_train.shape}, \n HI_train: {hi_train}')
-    # print(f'\n HI_test shape: {hi_test.shape}, \n HI_test: {hi_test}')
-    # print(f'\n HI_val shape: {hi_val.shape}, \n HI_val: {hi_val}')
+        hi_train, hi_test, hi_val, time_arr = sort_hi_test_train_val(hi_test, hi_train, hi_val, t=8)
 
-    # Plot HI graph
-    #filepath = r"C:\Users\job\Downloads\Test_HI_graph.png"
-    filepath = r"C:\Users\naomi\OneDrive\Documents\Low_Features\Test_HI_graph.png"
-    colors = ['b', 'r', 'g', 'c', 'm', 'y', 'orange', 'purple', 'brown', 'pink', 'gray', 'lime', 'violet', 'yellow']
-    x = np.linspace(0,100,x_range)
-    plt.plot(x, hi_train[0].reshape(-1,1), color='r', label='Sample 1')
-    plt.plot(x, hi_train[1].reshape(-1,1), color='lime', label='Sample 2')
-    plt.plot(x, hi_test.reshape((-1,1)), color='b', label='Sample 3 ')
-    plt.plot(x, hi_val.reshape((-1,1)), color='violet', label='Sample 7 ')
-    for i in range(2,5):
-        plt.plot(x, hi_train[i].reshape(-1,1), color=colors[i], label=f'Sample {i+2}') 
-    for i in range(5,10):
-        plt.plot(x, hi_train[i].reshape(-1,1), color=colors[i], label=f'Sample {i+3}')
-    plt.title('Test panel = 2')
-    plt.xlabel('Lifetime (%)')
-    plt.ylabel('HI')
-    plt.savefig(filepath)
-    plt.show()
 
-    # Create grid of subplots
-    #filepath = r"C:\Users\job\Downloads\Test_HI_graph_all_samples.png"
-    filepath = r"C:\Users\naomi\OneDrive\Documents\Low_Features\Test_HI_graph_all_samples.png"
-    fig, axes = plt.subplots(3, 4, figsize=(12, 9))
+        hi_all = reconstruct_hi_index_order(hi_train, hi_test, hi_val, test_idx)
+        LOOCV_hi_all_lst.append(hi_all)
 
-    # Flatten the axes array for simple iteration
-    axes = axes.flatten()
-    # Plot each row of y against x
-    for i, ax in enumerate(axes):
-        if i==0 or i==1:
-            ax.plot(x, hi_train[i].reshape(-1,1), color=colors[i], label=f'Sample {i+1}')
-        if i==2:
-            ax.plot(x, hi_test.reshape((-1,1)), color=colors[i], label='Sample 3 (test)')
-        if i>2 and i<6:
-            ax.plot(x, hi_train[i-1].reshape(-1,1), color=colors[i], label=f'Sample {i+1}') 
-        if i==6:
-            ax.plot(x, hi_val.reshape((-1,1)), color=colors[i], label='Sample 7 (val)')
-        if i>6:
-            ax.plot(x, hi_train[i-2].reshape(-1,1), color=colors[i], label=f'Sample {i+1}') 
-        ax.set_xlabel('Lifetime (%)')
+        print(f'shapes of HIs test train val: {hi_test.shape}, {hi_train.shape}, {hi_val.shape}')
 
-    # Add a single legend and big title for all subplots
-    #fig.legend(loc='center', bbox_to_anchor=(0.5, 0.08), ncol=2)
-    fig.suptitle(f'HIs constructed by VAE')
-    plt.tight_layout()
-    plt.savefig(filepath)
-    plt.show()
+        #hi_all = np.vstack(hi_all)
+        ftn, monotonicity, trendability, prognosability, error = fitness(hi_all)
+        fitness_array = np.array([ftn, monotonicity, trendability, prognosability, error])
+        LOOCV_fitness_lst.append(fitness_array)
+
+        print(f'fitness of all HIs: {ftn} \t Mo: {monotonicity} \t Tr: {trendability} \t Pr: {prognosability} \t Error: {error}')
+
+        print(f'shape of hi_train[0]: {hi_train[0].shape}')
+        x_range = hi_train[0].shape[0]
+        print(f'x_range = {x_range}')
+
+        #loaded_trained_vae = tf.keras.models.load_model('full_vae_model.h5')
+
+        # # Print 
+        # print(f'Epoch losses: {epoch_losses}')
+        # print(f'\n HI_train shape: {hi_train.shape}, \n HI_train: {hi_train}')
+        # print(f'\n HI_test shape: {hi_test.shape}, \n HI_test: {hi_test}')
+        # print(f'\n HI_val shape: {hi_val.shape}, \n HI_val: {hi_val}')
+
+        # Plot HI graph
+        #filepath = r"C:\Users\job\Downloads\Test_HI_graph.png"
+        # filepath = r"C:\Users\naomi\OneDrive\Documents\Low_Features\Test_HI_graph.png"
+        # colors = ['b', 'r', 'g', 'c', 'm', 'y', 'orange', 'purple', 'brown', 'pink', 'gray', 'lime', 'violet', 'yellow']
+        # x = np.linspace(0,100,x_range)
+        # plt.plot(x, hi_train[0].reshape(-1,1), color='r', label='Sample 1')
+        # plt.plot(x, hi_train[1].reshape(-1,1), color='lime', label='Sample 2')
+        # plt.plot(x, hi_test.reshape((-1,1)), color='b', label='Sample 3 ')
+        # plt.plot(x, hi_val.reshape((-1,1)), color='violet', label='Sample 7 ')
+        # for i in range(2,5):
+        #     plt.plot(x, hi_train[i].reshape(-1,1), color=colors[i], label=f'Sample {i+2}') 
+        # for i in range(5,10):
+        #     plt.plot(x, hi_train[i].reshape(-1,1), color=colors[i], label=f'Sample {i+3}')
+        # plt.title('Test panel = 2')
+        # plt.xlabel('Lifetime (%)')
+        # plt.ylabel('HI')
+        # plt.savefig(filepath)
+        # plt.show()
+
+        # Plot dims
+        n_plot_cols = 3
+        n_plot_rows = 4
+
+        # Create save paths for HI grapohs
+        save_path_plot = os.path.join(save_folder_hi_graphs, f"HIs_{SP_method}_Test_panel{test_idx}_single_plot.png")
+        save_path_ind_plots = os.path.join(save_folder_hi_graphs, f"HIs_{SP_method}_Test_panel{test_idx}_{n_plot_rows}x{n_plot_cols}.png")
+
+        plot_single_HI_graph(hi_all, save_path_plot, SP_method, test_idx, show_plot=False)
+        plot_grid_of_individual_hi_lines_graphs(hi_all, save_path_ind_plots, n_plot_rows, n_plot_cols, SP_method, test_idx, show_plot=False)
+
+        # # Create grid of subplots
+        # #filepath = r"C:\Users\job\Downloads\Test_HI_graph_all_samples.png"
+        # filepath = r"C:\Users\naomi\OneDrive\Documents\Low_Features\Test_HI_graph_all_samples.png"
+        # fig, axes = plt.subplots(3, 4, figsize=(12, 9))
+
+        # # Flatten the axes array for simple iteration
+        # axes = axes.flatten()
+        # # Plot each row of y against x
+        # for i, ax in enumerate(axes):
+        #     if i==0 or i==1:
+        #         ax.plot(x, hi_train[i].reshape(-1,1), color=colors[i], label=f'Sample {i+1}')
+        #     if i==2:
+        #         ax.plot(x, hi_test.reshape((-1,1)), color=colors[i], label='Sample 3 (test)')
+        #     if i>2 and i<6:
+        #         ax.plot(x, hi_train[i-1].reshape(-1,1), color=colors[i], label=f'Sample {i+1}') 
+        #     if i==6:
+        #         ax.plot(x, hi_val.reshape((-1,1)), color=colors[i], label='Sample 7 (val)')
+        #     if i>6:
+        #         ax.plot(x, hi_train[i-2].reshape(-1,1), color=colors[i], label=f'Sample {i+1}') 
+        #     ax.set_xlabel('Lifetime (%)')
+
+        # # Add a single legend and big title for all subplots
+        # #fig.legend(loc='center', bbox_to_anchor=(0.5, 0.08), ncol=2)
+        # fig.suptitle(f'HIs constructed by VAE')
+        # plt.tight_layout()
+        # plt.savefig(filepath)
+        # plt.show()
+    save_path_graph = os.path.join(save_folder_hi_graphs, f"LOOCV_HIs_{SP_method}_{n_plot_rows}x{n_plot_cols}.png")
+    plot_all_hi_graphs_LOOCV(LOOCV_hi_all_lst, save_path_graph, n_plot_rows, n_plot_cols, SP_method, show_plot=False)
+
+    fitness_arrays = np.vstack(LOOCV_fitness_lst)
+    print(f'Fitness array: {fitness_arrays}')
+    print(f'Stopping epochs: {epoch_stopping}')
+
+
 
 '''ATTEMPTING TO IMPLEMENT OPTIMIZATION'''
 optimizing = False

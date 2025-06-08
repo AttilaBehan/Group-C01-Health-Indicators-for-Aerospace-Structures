@@ -180,6 +180,7 @@ def Mo_single(X_single) -> float:
 
         # Compute monotonicity score by normalizing by total number of comparisons
         monotonicity_single = sum_samples / (len(X_single)-1)
+        #print(monotonicity_single)
 
     return monotonicity_single
 
@@ -207,6 +208,37 @@ def Mo(X):
     monotonicity = sum_monotonicities / np.shape(X)[0]
 
     return monotonicity
+
+def Monotonicity_new(x):
+    ''' More compact version of Mo function'''
+    M = x.shape[0]  # Number of samples
+    Mo_values = []
+    
+    for j in range(M):
+        sample = x[j, :]
+        Nj = len(sample)
+        numerator = 0
+        denominator = 0
+        
+        for i in range(Nj):
+            sum_num = 0
+            sum_den = 0
+            for p in range(i+1, Nj):
+                time_diff = (p - i)  # Assuming regular time intervals
+                value_diff = sample[p] - sample[i]
+                sum_num += time_diff * np.sign(value_diff)
+                sum_den += time_diff
+                
+            if sum_den != 0:
+                numerator += sum_num / sum_den
+        
+        if Nj > 1:
+            Mo_j = np.abs(numerator / (Nj - 1))
+            Mo_values.append(Mo_j)
+    
+    Mo = np.mean(Mo_values) if Mo_values else 0
+
+    return Mo
 
 
 def fitness(X, Mo_a=1.0, Tr_b=1.0, Pr_c=1.0):
