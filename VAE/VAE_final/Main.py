@@ -62,8 +62,8 @@ target_rows = 300
 ''' FUNCTIONS:'''
 
 # VAE merge data function and inputs for current dataset:
-target_rows = 300
-num_features=201
+target_rows = 1200
+num_features=6
 hidden_2 = 10
 
 
