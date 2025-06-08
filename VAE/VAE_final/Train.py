@@ -290,8 +290,8 @@ def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data,
         vae_train_data, vae_scaler = VAE_merge_data_per_timestep(train_paths, expected_cols, target_rows)
 
         # Load expected colums of test data excluding time
-        df_test = pd.read_csv(test_path).drop(columns=['Time (Cycle)'])
-        df_val = pd.read_csv(val_path).drop(columns='Time (Cycle)')
+        df_test = pd.read_csv(test_path).drop(columns=[])
+        df_val = pd.read_csv(val_path).drop(columns='')
         #expected_cols = ['Amplitude', 'Energy', 'Counts', 'Duration', 'RMS']
         df_test = df_test[expected_cols]
         df_val = df_val[expected_cols]
