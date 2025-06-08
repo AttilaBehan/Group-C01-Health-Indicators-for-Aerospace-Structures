@@ -136,7 +136,7 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
 ''' HI calculator based on reconstruction errors, 
 
     per timestep health scores: detect degradation at specific times, allows to check for monotonicity (penalize health decreases over time in VAE_loss)'''
-def compute_health_indicator(x, x_recon, k=1.0, target_rows=300, num_features=201):
+def compute_health_indicator(x, x_recon, k=1.0, target_rows=1200, num_features=6):
     ''' x, x_recon should have same shape and be 2D tensors
         k = sensitivity parameter (larger values penalize errors more)'''
     #print(f'x shape: {x.shape}')
@@ -212,8 +212,8 @@ def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data,
         vae_train_data, vae_scaler = VAE_merge_data_per_timestep(train_paths, expected_cols, target_rows)
 
         # Load expected colums of test data excluding time
-        df_test = pd.read_csv(test_path).drop(columns=['Time (Cycle)'])
-        df_val = pd.read_csv(val_path).drop(columns='Time (Cycle)')
+        df_test = pd.read_csv(test_path).drop(columns=[])
+        df_val = pd.read_csv(val_path).drop(columns='')
         #expected_cols = ['Amplitude', 'Energy', 'Counts', 'Duration', 'RMS']
         df_test = df_test[expected_cols]
         df_val = df_val[expected_cols]
