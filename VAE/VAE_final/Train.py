@@ -140,21 +140,26 @@ def compute_health_indicator(x, x_recon, k=1.0, target_rows=1200, num_features=6
     ''' x, x_recon should have same shape and be 2D tensors
         k = sensitivity parameter (larger values penalize errors more)'''
     #print(f'x shape: {x.shape}')
-    if x.shape[0]==target_rows:
-        x_reshaped = tf.convert_to_tensor(x, dtype=tf.float64)
-        x_recon_reshaped = tf.convert_to_tensor(x_recon, dtype=tf.float32)
-        # Make sure two x tensors have same float type:
-        x_reshaped = tf.cast(x_reshaped, tf.float32)
-        errors = tf.reduce_mean(tf.square(x_reshaped - x_recon_reshaped), axis=1) # Square of differences x and x_recon, then averages errors across features (axis=2), output shape = num samples, num timesteps (error per timestep per sample)
-        health = tf.exp(-k * errors)  # Shape (1, target_rows)
-    else:
-        x_reshaped = tf.reshape(x, (-1, target_rows, num_features))  # Reshape to 3D tensor and separate features again
-        x_recon_reshaped = tf.reshape(x_recon, (-1, target_rows, num_features))
-        # Make sure two x tensors have same float type:
-        x_reshaped = tf.cast(x_reshaped, tf.float32)
-        errors = tf.reduce_mean(tf.square(x_reshaped - x_recon_reshaped), axis=2) # Square of differences x and x_recon, then averages errors across features (axis=2), output shape = num samples, num timesteps (error per timestep per sample)
-        health = tf.exp(-k * errors)  # Shape (n_samples, target_rows)
+    # if x.shape[0]==target_rows:
+    #     x_reshaped = tf.convert_to_tensor(x, dtype=tf.float64)
+    #     x_recon_reshaped = tf.convert_to_tensor(x_recon, dtype=tf.float32)
+    #     # Make sure two x tensors have same float type:
+    #     x_reshaped = tf.cast(x_reshaped, tf.float32)
+    #     errors = tf.reduce_mean(tf.square(x_reshaped - x_recon_reshaped), axis=1) # Square of differences x and x_recon, then averages errors across features (axis=2), output shape = num samples, num timesteps (error per timestep per sample)
+    #     health = tf.exp(-k * errors)  # Shape (1, target_rows)
+    # else:
+    #     x_reshaped = tf.reshape(x, (-1, target_rows, num_features))  # Reshape to 3D tensor and separate features again
+    #     x_recon_reshaped = tf.reshape(x_recon, (-1, target_rows, num_features))
+    #     # Make sure two x tensors have same float type:
+    #     x_reshaped = tf.cast(x_reshaped, tf.float32)
+    #     errors = tf.reduce_mean(tf.square(x_reshaped - x_recon_reshaped), axis=2) # Square of differences x and x_recon, then averages errors across features (axis=2), output shape = num samples, num timesteps (error per timestep per sample)
+    #     health = tf.exp(-k * errors)  # Shape (n_samples, target_rows)
+    x = tf.cast(x, tf.float32)
+    errors = tf.reduce_mean(tf.square(x - x_recon), axis=2)
+    health = tf.exp(-k*errors)
+    #print('health shape:',health.shape)
     return health
+
 
 
 ''' PRINT PROGRESS OF HYPERPARAMETER OPTIMIZATION PROCESS'''
