@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 
 class VAE_Seed():
     vae_seed = 42
@@ -11,11 +12,31 @@ class VAE(tf.keras.Model):
         super(VAE, self).__init__()
 
         # Storing model parameters
-        self.timesteps = timesteps_per_batch
-        self.n_features = n_features
-        self.hidden_1 = int(hidden_1)
-        self.hidden_2 = int(hidden_2)
-
+        self.timesteps = int(timesteps_per_batch)
+        self.n_features = int(n_features)
+        # Handle NumPy integers explicitly
+        self.hidden_1 = int(hidden_1.item()) if isinstance(hidden_1, np.integer) else int(hidden_1)
+        self.hidden_2 = int(hidden_2.item()) if isinstance(hidden_2, np.integer) else int(hidden_2)
+        hidden_1_div_2 = int(self.hidden_1 // 2)
+        print(f"After conversion: hidden_1={self.hidden_1} ({type(self.hidden_1)}), "
+              f"hidden_2={self.hidden_2} ({type(self.hidden_2)}), "
+              f"hidden_1_div_2={hidden_1_div_2} ({type(hidden_1_div_2)}), "
+              f"timesteps={self.timesteps} ({type(self.timesteps)}), "
+              f"n_features={self.n_features} ({type(self.n_features)})")
+        # Check types after conversion
+        if not isinstance(self.hidden_1, int):
+            raise ValueError(f"self.hidden_1 ({self.hidden_1}) is not a Python int")
+        if not isinstance(self.hidden_2, int):
+            raise ValueError(f"self.hidden_2 ({self.hidden_2}) is not a Python int")
+        if not isinstance(hidden_1_div_2, int):
+            raise ValueError(f"hidden_1//2 ({hidden_1_div_2}) is not a Python int")
+        if not isinstance(self.timesteps, int):
+            raise ValueError(f"timesteps_per_batch ({self.timesteps}) is not a Python int")
+        if not isinstance(self.n_features, int):
+            raise ValueError(f"n_features ({self.n_features}) is not a Python int")
+        #if not isinstance(hidden_1, (int)):
+         #   raise ValueError(f"hidden_1 ({hidden_1}) is not an integer")
+        #hidden_1_div_2 = int(self.hidden_1 // 2)
         # Initialization of weights (to improve stability of training, with seed for reproducability)
         initializer = tf.keras.initializers.GlorotUniform(seed=VAE_Seed.vae_seed)
 
@@ -27,7 +48,7 @@ class VAE(tf.keras.Model):
             # LSTM processes sequences and returns last output
             tf.keras.layers.LSTM(hidden_1, activation='tanh', kernel_initializer=initializer, return_sequences=True),
             tf.keras.layers.Dropout(dropout_rate),  # <-- HERE
-            tf.keras.layers.LSTM(hidden_1//2, activation='tanh'),  # Reduced dim
+            tf.keras.layers.LSTM(hidden_1_div_2, activation='tanh'),  # Reduced dim
             # Output mean and log-variance of latent space
             tf.keras.layers.Dense(hidden_2 * 2, kernel_initializer=initializer),
         ])
