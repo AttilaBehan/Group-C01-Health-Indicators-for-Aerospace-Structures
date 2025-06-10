@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 
 class VAE_Seed():
     vae_seed = 42
@@ -6,16 +7,36 @@ class VAE_Seed():
 # Defines Keras VAE model
 class VAE(tf.keras.Model):
     # Contructor method which initializes VAE, hidden_2 = size of latent space, usually smaller than hidden_1
-    def __init__(self, timesteps_per_batch, n_features, hidden_1, hidden_2):
+    def __init__(self, timesteps_per_batch, n_features, hidden_1, hidden_2, dropout_rate=0.2):
         # Calls parent class constructor to initialize model properly
         super(VAE, self).__init__()
 
         # Storing model parameters
-        self.timesteps = timesteps_per_batch
-        self.n_features = n_features
-        self.hidden_1 = int(hidden_1)
-        self.hidden_2 = int(hidden_2)
-
+        self.timesteps = int(timesteps_per_batch)
+        self.n_features = int(n_features)
+        # Handle NumPy integers explicitly
+        self.hidden_1 = int(hidden_1.item()) if isinstance(hidden_1, np.integer) else int(hidden_1)
+        self.hidden_2 = int(hidden_2.item()) if isinstance(hidden_2, np.integer) else int(hidden_2)
+        hidden_1_div_2 = int(self.hidden_1 // 2)
+        print(f"After conversion: hidden_1={self.hidden_1} ({type(self.hidden_1)}), "
+              f"hidden_2={self.hidden_2} ({type(self.hidden_2)}), "
+              f"hidden_1_div_2={hidden_1_div_2} ({type(hidden_1_div_2)}), "
+              f"timesteps={self.timesteps} ({type(self.timesteps)}), "
+              f"n_features={self.n_features} ({type(self.n_features)})")
+        # Check types after conversion
+        if not isinstance(self.hidden_1, int):
+            raise ValueError(f"self.hidden_1 ({self.hidden_1}) is not a Python int")
+        if not isinstance(self.hidden_2, int):
+            raise ValueError(f"self.hidden_2 ({self.hidden_2}) is not a Python int")
+        if not isinstance(hidden_1_div_2, int):
+            raise ValueError(f"hidden_1//2 ({hidden_1_div_2}) is not a Python int")
+        if not isinstance(self.timesteps, int):
+            raise ValueError(f"timesteps_per_batch ({self.timesteps}) is not a Python int")
+        if not isinstance(self.n_features, int):
+            raise ValueError(f"n_features ({self.n_features}) is not a Python int")
+        #if not isinstance(hidden_1, (int)):
+         #   raise ValueError(f"hidden_1 ({hidden_1}) is not an integer")
+        #hidden_1_div_2 = int(self.hidden_1 // 2)
         # Initialization of weights (to improve stability of training, with seed for reproducability)
         initializer = tf.keras.initializers.GlorotUniform(seed=VAE_Seed.vae_seed)
 
@@ -25,23 +46,31 @@ class VAE(tf.keras.Model):
         self.encoder = tf.keras.Sequential([
             tf.keras.layers.InputLayer(shape=(timesteps_per_batch, n_features)),
             # LSTM processes sequences and returns last output
-            tf.keras.layers.LSTM(int(hidden_1), activation='tanh', kernel_initializer=initializer, return_sequences = False),
+            tf.keras.layers.LSTM(hidden_1, activation='tanh', kernel_initializer=initializer, return_sequences=True),
+            tf.keras.layers.Dropout(dropout_rate),  # <-- HERE
+            tf.keras.layers.LSTM(hidden_1_div_2, activation='tanh'),  # Reduced dim
             # Output mean and log-variance of latent space
-            tf.keras.layers.Dense(int(hidden_2) * 2, kernel_initializer=initializer),
+            tf.keras.layers.Dense(hidden_2 * 2, kernel_initializer=initializer),
         ])
 
 
         # Decoder Network
             # Takes latent space (hidden_2) as input, then reconstructs by reversing Encoder layers
         self.decoder = tf.keras.Sequential([
-            tf.keras.layers.InputLayer(shape=(int(hidden_2),)),
-            # Expand latent vector to LSTM input size
-            tf.keras.layers.Dense(int(hidden_1), activation='relu', kernel_initializer=initializer),
-            # Reshape to (batch, timesteps, hidden_1) for LSTM
-            tf.keras.layers.RepeatVector(timesteps_per_batch),  # Repeats z `timesteps` times
-            # LSTM reconstructs sequences
-            tf.keras.layers.LSTM(n_features, activation='tanh', kernel_initializer=initializer, return_sequences=True),
-            # No need for Flatten since output is (batch, timesteps, n_features)
+            tf.keras.layers.InputLayer(shape=(hidden_2,)),
+            # Project to intermediate dimension
+            tf.keras.layers.Dense(hidden_1 * 2, activation='tanh'),
+            tf.keras.layers.Dropout(0.2),
+            # Project back to original LSTM dim
+            tf.keras.layers.Dense(hidden_1),
+            # Sequence reconstruction
+            tf.keras.layers.RepeatVector(timesteps_per_batch),
+            # Stacked LSTMs for better sequence modeling
+            tf.keras.layers.LSTM(hidden_1, return_sequences=True),
+            tf.keras.layers.LSTM(n_features, return_sequences=True),
+            # Properly scaled output
+            tf.keras.layers.TimeDistributed(
+                tf.keras.layers.Dense(n_features, activation='linear')),
         ])
 
     # Encoding method
@@ -66,3 +95,17 @@ class VAE(tf.keras.Model):
         z = self.reparameterize(mean, logvar) # Reparametrizing
         x_recon = self.decode(z) # Decoding
         return x_recon, mean, logvar, z # Returning reconstructed input, latent distribution parametyers, sampled latent variable
+    
+    def get_config(self):
+        config = super(VAE, self).get_config()  # Get parent config
+        config.update({
+            'timesteps_per_batch': self.timesteps,
+            'n_features': self.n_features,
+            'hidden_1': self.hidden_1,
+            'hidden_2': self.hidden_2
+        })
+        return config
+    
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)

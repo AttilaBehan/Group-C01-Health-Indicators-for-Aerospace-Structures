@@ -134,8 +134,9 @@ if __name__ == "__main__" and train_once:
     vae_val_data = df_val_resampled.values
 
     # Standardize val and test data
-    vae_test_data = vae_scaler.transform(vae_test_data)
-    vae_val_data = vae_scaler.transform(vae_val_data)
+    #note, this scalar transform is being removed 
+    #vae_test_data = vae_scaler.transform(vae_test_data)
+    #vae_val_data = vae_scaler.transform(vae_val_data)
 
     # Train model
     hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(vae_train_data, vae_val_data, vae_test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2, target_rows)
@@ -251,8 +252,9 @@ if __name__ == "__main__" and optimizing:
         vae_val_data = df_val_resampled.values
 
         # Standardize val and test data
-        vae_test_data = vae_scaler.transform(vae_test_data)
-        vae_val_data = vae_scaler.transform(vae_val_data)
+        #this scaling is commented out for now
+        #vae_test_data = vae_scaler.transform(vae_test_data)
+        #vae_val_data = vae_scaler.transform(vae_val_data)
         hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(vae_train_data, vae_val_data, vae_test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, hidden_2, target_rows)
         Training_his.append(hi_train)
         Testing_his.append(hi_test)

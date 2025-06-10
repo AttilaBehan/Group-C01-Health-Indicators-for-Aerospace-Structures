@@ -149,40 +149,77 @@ def VAE_optimize_hyperparameters(folder_save_opt_param_csv, expected_cols, filep
     print(f"\n✅ Saved best parameters to {os.path.join(folder_save_opt_param_csv, 'hyperparameters-opt-samples.csv')}")
     return best_params
 
+
 def VAE_objective(params, batch_size, target_rows, num_features):
-    """
-    Objective function for optimizing VAE hyperparameters.
-
-    Parameters:
-        - params (list): List of hyperparameter values in the order:
-            [hidden_1, learning_rate, epochs, hidden_2, reloss_coeff, klloss_coeff, moloss_coeff]
-        - batch_size (int): Batch size for training
-        - target_rows (int): Number of timesteps per sample
-        - num_features (int): Number of features per timestep
-
-    Returns:
-        - error (float): Error from fitness function (3 / fitness)
-    """
     hidden_1, learning_rate, epochs, hidden_2, reloss_coeff, klloss_coeff, moloss_coeff = params
-    random.seed(VAE_Seed.vae_seed)
-    tf.random.set_seed(VAE_Seed.vae_seed)
-    np.random.seed(VAE_Seed.vae_seed)
+    # Convert integer parameters to Python int
+    hidden_1 = int(hidden_1.item()) if isinstance(hidden_1, np.integer) else int(hidden_1)
+    epochs = int(epochs.item()) if isinstance(epochs, np.integer) else int(epochs)
+    hidden_2 = int(hidden_2.item()) if isinstance(hidden_2, np.integer) else int(hidden_2)
+    target_rows = int(target_rows)
+    num_features = int(num_features)
+    batch_size = int(batch_size)
 
+    #bug checking
+    print(f"Params: hidden_1={hidden_1} ({type(hidden_1)}), hidden_2={hidden_2} ({type(hidden_2)}), "
+          f"epochs={epochs} ({type(epochs)}), target_rows={target_rows} ({type(target_rows)}), "
+          f"num_features={num_features} ({type(num_features)}), batch_size={batch_size} ({type(batch_size)})")
+    if not all(isinstance(x, int) for x in [hidden_1, hidden_2, epochs, target_rows, num_features, batch_size]):
+        raise ValueError("All integer parameters must be Python int")
     print(f"Trying parameters: hidden_1={hidden_1}, learning_rate={learning_rate}, "
           f"epochs={epochs}, hidden_2={hidden_2}, reloss_coeff={reloss_coeff}, "
           f"klloss_coeff={klloss_coeff}, moloss_coeff={moloss_coeff}")
-
+    
+    
+    random.seed(VAE_Seed.vae_seed)
+    tf.random.set_seed(VAE_Seed.vae_seed)
+    np.random.seed(VAE_Seed.vae_seed)
     hi_train, hi_test, hi_val, vae, epoch_losses, train_test_val_losses = VAE_train(
         vae_train_data, vae_val_data, vae_test_data, hidden_1, batch_size, learning_rate, 
         epochs, reloss_coeff, klloss_coeff, moloss_coeff, hidden_2, target_rows, num_features
     )
-
     hi_all = np.vstack((hi_train, hi_test, hi_val))
     if hi_test.shape[1] == 1:
         hi_test = np.tile(hi_test, (1, -1))  
     ftn, monotonicity, trendability, prognosability, error = fitness(hi_all)
-    print("Error: ", error)
+    print(f"Error: {error}")
     return error
+# def VAE_objective(params, batch_size, target_rows, num_features):
+#     """
+#     Objective function for optimizing VAE hyperparameters.
+
+#     Parameters:
+#         - params (list): List of hyperparameter values in the order:
+#             [hidden_1, learning_rate, epochs, hidden_2, reloss_coeff, klloss_coeff, moloss_coeff]
+#         - batch_size (int): Batch size for training
+#         - target_rows (int): Number of timesteps per sample
+#         - num_features (int): Number of features per timestep
+
+#     Returns:
+#         - error (float): Error from fitness function (3 / fitness)
+#     """
+#     hidden_1, learning_rate, epochs, hidden_2, reloss_coeff, klloss_coeff, moloss_coeff = params
+#     random.seed(VAE_Seed.vae_seed)
+#     tf.random.set_seed(VAE_Seed.vae_seed)
+#     np.random.seed(VAE_Seed.vae_seed)
+
+#     print(f"Trying parameters: hidden_1={hidden_1}, learning_rate={learning_rate}, "
+#           f"epochs={epochs}, hidden_2={hidden_2}, reloss_coeff={reloss_coeff}, "
+#           f"klloss_coeff={klloss_coeff}, moloss_coeff={moloss_coeff}")
+
+#     hi_train, hi_test, hi_val, vae, epoch_losses, train_test_val_losses = VAE_train(
+#         vae_train_data, vae_val_data, vae_test_data, hidden_1, batch_size, learning_rate, 
+#         epochs, reloss_coeff, klloss_coeff, moloss_coeff, hidden_2, target_rows, num_features
+#     )
+
+#     hi_all = np.vstack((hi_train, hi_test, hi_val))
+#     if hi_test.shape[1] == 1:
+#         hi_test = np.tile(hi_test, (1, -1))  
+#     ftn, monotonicity, trendability, prognosability, error = fitness(hi_all)
+#     print("Error: ", error)
+#     return error
+
+
 
 def VAE_objective_with_data(params, batch_size, vae_train_data, vae_val_data, vae_test_data, file_type, panel, freq, target_rows, num_features):
     return VAE_objective(params, batch_size, target_rows, num_features)
