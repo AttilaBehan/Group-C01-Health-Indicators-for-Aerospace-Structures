@@ -175,7 +175,7 @@ if __name__ == "__main__" and optimizing:
 
     target_rows = 1200
     batch_size = 40
-    n_calls_per_sample = 12
+    n_calls_per_sample = 10
     feature_level_data_base_path = r"VAE_AE_DATA"
     all_paths = glob.glob(feature_level_data_base_path + "/*.csv")
     n_filepaths = len(all_paths)
