@@ -1295,7 +1295,7 @@ def sort_hi_test_train_val(hi_test, hi_train, hi_val, t=0):
         time_arr = np.linspace(0,100,hi_train.shape[1])
     return hi_train, hi_test, hi_val, time_arr
 
-def reconstruct_hi_index_order(train_data, test_data, val_data, test_idx):
+def reconstruct_hi_index_order(train_data, test_data, val_data, test_idx, t=0):
     """
     Reconstructs the full ordered dataset (12, m) from training, test, and validation splits.
 
@@ -1314,6 +1314,12 @@ def reconstruct_hi_index_order(train_data, test_data, val_data, test_idx):
 
     val_idx = (test_idx + 4) % num_total_samples
 
+    if t!=0:
+        test_data = test_data[t:]
+        train_data = train_data[:,t:]
+        val_data = val_data[t:]
+        time_arr = np.linspace(0,100,train_data.shape[1])
+
     # All sample indices
     all_indices = list(range(num_total_samples))
     # Remaining indices after removing test and val
@@ -1327,7 +1333,7 @@ def reconstruct_hi_index_order(train_data, test_data, val_data, test_idx):
     full_data[test_idx] = test_data
     full_data[val_idx] = val_data
 
-    return full_data
+    return full_data, time_arr
 
 def plot_all_hi_graphs_LOOCV(hi_arr_lst, save_path, n_plot_rows, n_plot_col, SP_method, show_plot=True):
     n_samples = hi_arr_lst[0].shape[0]
@@ -1592,13 +1598,13 @@ if __name__ == "__main__" and train_once:
         
         print(f'shapes of HIs test train val: {hi_test.shape}, {hi_train.shape}, {hi_val.shape}')
 
-        hi_train, hi_test, hi_val, time_arr = sort_hi_test_train_val(hi_test, hi_train, hi_val, t=8)
+        # hi_train, hi_test, hi_val, time_arr = sort_hi_test_train_val(hi_test, hi_train, hi_val, t=8)
 
 
-        hi_all = reconstruct_hi_index_order(hi_train, hi_test, hi_val, test_idx)
+        hi_all, time_arr = reconstruct_hi_index_order(hi_train, hi_test, hi_val, test_idx, t=8)
         LOOCV_hi_all_lst.append(hi_all)
 
-        print(f'shapes of HIs test train val: {hi_test.shape}, {hi_train.shape}, {hi_val.shape}')
+        # print(f'shapes of HIs test train val: {hi_test.shape}, {hi_train.shape}, {hi_val.shape}')
 
         #hi_all = np.vstack(hi_all)
         ftn, monotonicity, trendability, prognosability, error = fitness(hi_all)
@@ -1607,9 +1613,9 @@ if __name__ == "__main__" and train_once:
 
         print(f'fitness of all HIs: {ftn} \t Mo: {monotonicity} \t Tr: {trendability} \t Pr: {prognosability} \t Error: {error}')
 
-        print(f'shape of hi_train[0]: {hi_train[0].shape}')
-        x_range = hi_train[0].shape[0]
-        print(f'x_range = {x_range}')
+        # print(f'shape of hi_train[0]: {hi_train[0].shape}')
+        # x_range = hi_train[0].shape[0]
+        # print(f'x_range = {x_range}')
 
         #loaded_trained_vae = tf.keras.models.load_model('full_vae_model.h5')
 
