@@ -122,8 +122,8 @@ if __name__ == "__main__" and train_once:
     vae_train_data, vae_scaler = VAE_merge_data_per_timestep(train_paths, expected_cols, target_rows)
 
     # Load expected colums of test data excluding time
-    df_test = pd.read_csv(test_path).drop(columns='Unnamed: 0')
-    df_val = pd.read_csv(val_path).drop(columns='Unnamed: 0')
+    df_test = pd.read_csv(test_path)
+    df_val = pd.read_csv(val_path)
     df_test = df_test[expected_cols]
     df_val = df_val[expected_cols]
 
@@ -238,8 +238,8 @@ if __name__ == "__main__" and optimizing:
         vae_train_data, vae_scaler = VAE_merge_data_per_timestep(train_paths, expected_cols, target_rows)
 
         # Load expected colums of test data excluding time
-        df_test = pd.read_csv(test_path).drop(columns='Unnamed: 0')
-        df_val = pd.read_csv(val_path).drop(columns='Unnamed: 0')
+        df_test = pd.read_csv(test_path)
+        df_val = pd.read_csv(val_path)
         #expected_cols = ['Amplitude', 'Energy', 'Counts', 'Duration', 'RMS']
         df_test = df_test[expected_cols]
         df_val = df_val[expected_cols]
