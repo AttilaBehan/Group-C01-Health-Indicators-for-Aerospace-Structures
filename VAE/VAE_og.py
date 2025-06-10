@@ -1310,7 +1310,7 @@ def reconstruct_hi_index_order(train_data, test_data, val_data, test_idx, t=0):
     """
     num_total_samples = 12
     m = train_data.shape[1]
-    full_data = np.zeros((num_total_samples, m))
+    full_data = np.zeros((num_total_samples, int(m-t)))
 
     val_idx = (test_idx + 4) % num_total_samples
 
