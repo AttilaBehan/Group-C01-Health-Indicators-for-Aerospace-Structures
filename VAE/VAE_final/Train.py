@@ -12,32 +12,58 @@ from File_handling import resample_dataframe, VAE_merge_data_per_timestep
 
 #@tf.function  # Decotator, Converts the Python function into a TensorFlow graph for faster execution
 #note: added input of target_rows and num_features
-def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coeff,target_rows,num_features):
-    """
-        Training VAE step
+# def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coeff,target_rows,num_features):
+#     """
+#         Training VAE step
     
-        Parameters:
-        - vae: the VAE model (instance of the VAE class)
-        - batch_xs: Batch of input data (shape=[batch_size, input_dim]).
-        - optimizer: Optimization algorithm (e.g., tf.keras.optimizers.Adam).
-        - reloss_coeff, klloss_coeff, moloss_coeff: Weighting factors for the loss components.
+#         Parameters:
+#         - vae: the VAE model (instance of the VAE class)
+#         - batch_xs: Batch of input data (shape=[batch_size, input_dim]).
+#         - optimizer: Optimization algorithm (e.g., tf.keras.optimizers.Adam).
+#         - reloss_coeff, klloss_coeff, moloss_coeff: Weighting factors for the loss components.
 
-        Returns: 
-        - loss: for monitoring/plotting
+#         Returns: 
+#         - loss: for monitoring/plotting
+#     """
+#     # Gradient Tape Context (Records operations for automatic differentiation - for backporpagations in training loop)
+#     with tf.GradientTape() as tape:
+#         # FWD pass: bathc_xs passed through VAE, VAE returns reconstructed input, latent distribution parameters, sampled latent vector (z)
+#         x_recon, mean, logvar, z = vae(batch_xs, training=True) # Training = true makes sure dropout layers are on
+#         # Computes HI from prev defined function
+#         health = compute_health_indicator(batch_xs, x_recon, target_rows, num_features) # output size = (batch_size, timesteps)
+#         # Computes loss from prev defined function (output = scalar loss value, averaged over batch)
+#         loss = vae_loss(batch_xs, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
+#     # computes gradients of loss w.r.t. all trainable weights in VAE
+#     gradients = tape.gradient(loss, vae.trainable_variables) # Returns list of gradients (one per layer/variable)
+#     # Weight update using gradients (zip(gradients, trainable_variables) pairs grads with weights and optimizer applies rule)
+#     optimizer.apply_gradients(zip(gradients, vae.trainable_variables))
+#     return loss
+def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coeff, target_rows, num_features):
     """
-    # Gradient Tape Context (Records operations for automatic differentiation - for backporpagations in training loop)
+    Training VAE step with gradient clipping.
+
+    Parameters:
+    - vae: the VAE model (instance of the VAE class)
+    - batch_xs: Batch of input data (shape=[batch_size, input_dim]).
+    - optimizer: Optimization algorithm (e.g., tf.keras.optimizers.Adam).
+    - reloss_coeff, klloss_coeff, moloss_coeff: Weighting factors for the loss components.
+
+    Returns: 
+    - loss: for monitoring/plotting
+    """
     with tf.GradientTape() as tape:
-        # FWD pass: bathc_xs passed through VAE, VAE returns reconstructed input, latent distribution parameters, sampled latent vector (z)
-        x_recon, mean, logvar, z = vae(batch_xs, training=True) # Training = true makes sure dropout layers are on
-        # Computes HI from prev defined function
-        health = compute_health_indicator(batch_xs, x_recon, target_rows, num_features) # output size = (batch_size, timesteps)
-        # Computes loss from prev defined function (output = scalar loss value, averaged over batch)
+        x_recon, mean, logvar, z = vae(batch_xs, training=True)
+        health = compute_health_indicator(batch_xs, x_recon, target_rows, num_features)
         loss = vae_loss(batch_xs, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
-    # computes gradients of loss w.r.t. all trainable weights in VAE
-    gradients = tape.gradient(loss, vae.trainable_variables) # Returns list of gradients (one per layer/variable)
-    # Weight update using gradients (zip(gradients, trainable_variables) pairs grads with weights and optimizer applies rule)
+    
+    gradients = tape.gradient(loss, vae.trainable_variables)
+
+    # ✅ Gradient clipping added here
+    gradients, _ = tf.clip_by_global_norm(gradients, 1.0)  # You can tune 1.0 as needed
+
     optimizer.apply_gradients(zip(gradients, vae.trainable_variables))
     return loss
+
 
 ''' Apply the train_step() function to train the VAE'''
 def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, hidden_2, target_rows, num_features=6, patience=50, min_delta=1e-4):
