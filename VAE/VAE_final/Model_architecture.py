@@ -44,7 +44,7 @@ class VAE(tf.keras.Model):
             # Sequential = linear stack of layers
             # layers: input (with input dim), dense (hidden_1 with signoid activation function), dense (hidden_2 * 2, bc outputs mean and log-variance)
         self.encoder = tf.keras.Sequential([
-            tf.keras.layers.InputLayer(shape=(timesteps_per_batch, n_features)),
+            tf.keras.layers.InputLayer(input_shape=(timesteps_per_batch, n_features)),
             # LSTM processes sequences and returns last output
             tf.keras.layers.LSTM(hidden_1, activation='tanh', kernel_initializer=initializer, return_sequences=True),
             tf.keras.layers.Dropout(dropout_rate),  # <-- HERE
@@ -57,7 +57,7 @@ class VAE(tf.keras.Model):
         # Decoder Network
             # Takes latent space (hidden_2) as input, then reconstructs by reversing Encoder layers
         self.decoder = tf.keras.Sequential([
-            tf.keras.layers.InputLayer(shape=(hidden_2,)),
+            tf.keras.layers.InputLayer(input_shape=(hidden_2,)),
             # Project to intermediate dimension
             tf.keras.layers.Dense(hidden_1 * 2, activation='tanh'),
             tf.keras.layers.Dropout(0.2),
