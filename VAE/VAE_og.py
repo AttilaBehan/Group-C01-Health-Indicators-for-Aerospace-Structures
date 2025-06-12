@@ -62,7 +62,7 @@ target_rows = 1200
 # VAE merge data function and inputs for current dataset:
 target_rows = 1200
 num_features=3
-hidden_2 = 8
+hidden_2 = 32
 
 ''' Resampling test and validation data'''
 def resample_dataframe(df, target_rows):
@@ -234,7 +234,7 @@ def create_batches_from_arrays_list(array_list, timesteps, batch_size, shuffle=F
 # Defines Keras VAE model
 class VAE(tf.keras.Model):
     # Contructor method which initializes VAE, hidden_2 = size of latent space, usually smaller than hidden_1
-    def __init__(self, timesteps_per_batch, n_features, hidden_1, hidden_2=8, dropout_rate=0.2, **kwargs):
+    def __init__(self, timesteps_per_batch, n_features, hidden_1, hidden_2=32, dropout_rate=0.2, **kwargs):
         # Calls parent class constructor to initialize model properly
         super(VAE, self).__init__(**kwargs)  # Pass kwargs to parent
 
@@ -461,7 +461,7 @@ def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coef
     return loss
 
 ''' Apply the train_step() function to train the VAE'''
-def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=8, target_rows=1200, patience=50, min_delta=1e-4, timesteps_per_batch=10, model_save_path='vae_model.weights.keras', final_model_save_path='full_vae_model.keras'):
+def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=32, target_rows=1200, patience=50, min_delta=1e-4, timesteps_per_batch=10, model_save_path='vae_model.weights.keras', final_model_save_path='full_vae_model.keras'):
     """
         Trains VAE on sample_data with inbuilt early stopping when validation diverges, then evaluates VAE on test_data
     
@@ -1191,7 +1191,7 @@ def plot_HI_graph(HI_all, dataset_name, sp_method_name, folder_output, show_plot
         plt.show()
 
 ''' TRAINS VAE USING HYPERPARAMETERS WITH LOWEST ERROR'''
-def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data, vae_val_data, vae_test_data, expected_cols, target_rows, num_features, hidden_2=8):
+def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data, vae_val_data, vae_test_data, expected_cols, target_rows, num_features, hidden_2=32):
     # Load hyperparameters
     df = pd.read_csv(opt_hyperparam_filepath)
     columns=["test_panel_id", "params", "error"]
@@ -1492,15 +1492,32 @@ if __name__ == "__main__" and train_once:
     LOOCV_loss_history = []
     epoch_stopping = np.zeros((12))
 
+    # target_rows=1200
+    # hidden_1 = 40
+    # batch_size = 40
+    # learning_rate = 0.0001
+    # epochs = 20  # final = 8
+    # # reloss_coeff = 0.9
+    # # klloss_coeff = 0.9
+    # # moloss_coeff = 0.9
+    # reloss_coeff = 0.4
+    # klloss_coeff = 1.5
+    # moloss_coeff = 2.8
+    # timesteps_per_batch = 30
+
     target_rows=1200
-    hidden_1 = 40
+    hidden_1 = 72
     batch_size = 40
-    learning_rate = 0.0001
+    learning_rate = 0.001514381
     epochs = 20  # final = 8
-    reloss_coeff = 0.9
-    klloss_coeff = 0.9
-    moloss_coeff = 0.9
+    # reloss_coeff = 0.9
+    # klloss_coeff = 0.9
+    # moloss_coeff = 0.9
+    reloss_coeff = 0.026367181
+    klloss_coeff = 1.930642107
+    moloss_coeff = 2.320878188
     timesteps_per_batch = 30
+
 
     vae_model_save_path = 'full_vae_model.keras'
 
@@ -1523,8 +1540,8 @@ if __name__ == "__main__" and train_once:
         # Leave-one-out split
         test_idx = k
         val_idx = (k + 4) % 12
-        add = (4*k+2)%16
-        epochs = 20 + add
+        add = (4*k+2)%15
+        epochs = 18 + add
 
         test_path = all_paths[test_idx]
         #val_path_idx = (i+5)%(int(n_filepaths))
@@ -1588,7 +1605,7 @@ if __name__ == "__main__" and train_once:
         val_dataset = create_batches_from_arrays_list(val_arrays, timesteps_per_batch, batch_size)
 
         # Train model
-        vae, epoch_losses, epoch_quit = VAE_train(train_dataset, val_dataset, test_dataset, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=8, timesteps_per_batch=timesteps_per_batch)
+        vae, epoch_losses, epoch_quit = VAE_train(train_dataset, val_dataset, test_dataset, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2=32, timesteps_per_batch=timesteps_per_batch)
 
         LOOCV_loss_history.append(epoch_losses)
 
