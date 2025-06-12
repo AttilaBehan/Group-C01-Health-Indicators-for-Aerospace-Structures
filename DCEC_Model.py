@@ -43,7 +43,7 @@ class ReMAP_Dataset(Dataset):
 
 def load_data(csv_path):
     df = pd.read_csv(csv_path)
-    X = df['Amplitude', 'Rise-Time', 'Energy', 'Counts', 'Duration', 'RMS']  # Low-level features which are used
+    X = df[['Amplitude', 'Rise-Time', 'Energy', 'Counts', 'Duration', 'RMS']]  # Low-level features which are used
     X_scaled = StandardScaler().fit_transform(X)  # Maybe apply adaptive standardization?
     X_tensor = torch.tensor(X_scaled, dtype=torch.float32).unsqueeze(1)
     return X_tensor.to(device)
@@ -94,7 +94,7 @@ def target_distribution(q):
     return (weight.t() / torch.sum(weight, dim=1)).t()
 
 
-def train_dcec(X_tensor, input_size, n_clusters=3, latent_dim=10, batch_size=256, pretrain_epochs=5, joint_epochs=30, learning_rate=1e-3):
+def train_dcec(X_tensor, input_size, n_clusters=5, latent_dim=10, batch_size=256, pretrain_epochs=5, joint_epochs=30, learning_rate=1e-3):
     """ Trains the DCEC model. """
     # Hyperparameters might need some tweaking
 
@@ -165,7 +165,7 @@ def loocv_run():
         Each sample is the test sample once. """
 
     all_indices = list(range(1, 13))
-    n_clusters = 3
+    n_clusters = 5
     latent_dim = 10
 
     total_runs = len(all_indices)
@@ -225,3 +225,5 @@ def loocv_run():
 
     total_time = time.time() - start_time
     print(f"\nLOOCV completed in {total_time/60:.2f} minutes.")
+
+loocv_run()
