@@ -1,86 +1,86 @@
 {
   "Val_Sample1_Test_Sample2": {
-    "0": "Fiber Break",
-    "1": "Matrix Cracking",
-    "2": "Delamination",
-    "3": "Void Formation",
-    "4": "Other Damage"
+    "0": "Fiber/Matrix Debonding",
+    "1": "Delamination",
+    "2": "Matrix Cracking",
+    "3": "Mixed",
+    "4": "Fiber Breakage"
   },
   "Val_Sample2_Test_Sample3": {
-    "0": "Matrix Cracking",
-    "1": "Fiber Break",
-    "2": "Other Damage",
-    "3": "Delamination",
-    "4": "Void Formation"
+    "0": "Delamination",
+    "1": "Fiber Breakage",
+    "2": "Matrix Cracking",
+    "3": "Fiber/Matrix Debonding",
+    "4": "Mixed"
   },
   "Val_Sample3_Test_Sample4": {
     "0": "Delamination",
-    "1": "Void Formation",
-    "2": "Fiber Break",
-    "3": "Matrix Cracking",
-    "4": "Other Damage"
+    "1": "Fiber/Matrix Debonding",
+    "2": "Mixed",
+    "3": "Fiber Breakage",
+    "4": "Matrix Cracking"
   },
   "Val_Sample4_Test_Sample5": {
-    "0": "Void Formation",
-    "1": "Other Damage",
-    "2": "Matrix Cracking",
-    "3": "Fiber Break",
+    "0": "Matrix Cracking",
+    "1": "Mixed",
+    "2": "Fiber/Matrix Debonding",
+    "3": "Fiber Breakage",
     "4": "Delamination"
   },
   "Val_Sample5_Test_Sample6": {
-    "0": "Other Damage",
-    "1": "Delamination",
-    "2": "Void Formation",
-    "3": "Fiber Break",
+    "0": "Delamination",
+    "1": "Fiber Breakage",
+    "2": "Fiber/Matrix Debonding",
+    "3": "Mixed",
     "4": "Matrix Cracking"
   },
   "Val_Sample6_Test_Sample7": {
-    "0": "Fiber Break",
-    "1": "Matrix Cracking",
-    "2": "Delamination",
-    "3": "Void Formation",
-    "4": "Other Damage"
+    "0": "Fiber Breakage",
+    "1": "Delamination",
+    "2": "Mixed",
+    "3": "Matrix Cracking",
+    "4": "Fiber/Matrix Debonding"
   },
   "Val_Sample7_Test_Sample8": {
-    "0": "Matrix Cracking",
-    "1": "Fiber Break",
-    "2": "Other Damage",
+    "0": "Mixed",
+    "1": "Fiber Breakage",
+    "2": "Fiber/Matrix Debonding",
     "3": "Delamination",
-    "4": "Void Formation"
-  },
-  "Val_Sample8_Test_Sample9": {
-    "0": "Delamination",
-    "1": "Void Formation",
-    "2": "Fiber Break",
-    "3": "Matrix Cracking",
-    "4": "Other Damage"
-  },
-  "Val_Sample9_Test_Sample10": {
-    "0": "Void Formation",
-    "1": "Other Damage",
-    "2": "Matrix Cracking",
-    "3": "Fiber Break",
-    "4": "Delamination"
-  },
-  "Val_Sample10_Test_Sample11": {
-    "0": "Other Damage",
-    "1": "Delamination",
-    "2": "Void Formation",
-    "3": "Fiber Break",
     "4": "Matrix Cracking"
   },
-  "Val_Sample11_Test_Sample12": {
-    "0": "Fiber Break",
+  "Val_Sample8_Test_Sample9": {
+    "0": "Mixed",
     "1": "Matrix Cracking",
     "2": "Delamination",
-    "3": "Void Formation",
-    "4": "Other Damage"
+    "3": "Fiber/Matrix Debonding",
+    "4": "Fiber Breakage"
+  },
+  "Val_Sample9_Test_Sample10": {
+    "0": "Fiber/Matrix Debonding",
+    "1": "Matrix Cracking",
+    "2": "Delamination",
+    "3": "Mixed",
+    "4": "Fiber Breakage"
+  },
+  "Val_Sample10_Test_Sample11": {
+    "0": "Delamination",
+    "1": "Mixed",
+    "2": "Matrix Cracking",
+    "3": "Fiber/Matrix Debonding",
+    "4": "Fiber Breakage"
+  },
+  "Val_Sample11_Test_Sample12": {
+    "0": "Fiber Breakage",
+    "1": "Fiber/Matrix Debonding",
+    "2": "Matrix Cracking",
+    "3": "Delamination",
+    "4": "Mixed"
   },
   "Val_Sample12_Test_Sample1": {
-    "0": "Matrix Cracking",
-    "1": "Fiber Break",
-    "2": "Other Damage",
-    "3": "Delamination",
-    "4": "Void Formation"
+    "0": "Mixed",
+    "1": "Fiber/Matrix Debonding",
+    "2": "Fiber Breakage",
+    "3": "Matrix Cracking",
+    "4": "Delamination"
   }
 }

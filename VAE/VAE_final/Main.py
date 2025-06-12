@@ -63,7 +63,7 @@ target_rows = 300
 
 # VAE merge data function and inputs for current dataset:
 target_rows = 1200
-num_features=6
+num_features=3
 hidden_2 = 10
 
 
@@ -122,8 +122,8 @@ if __name__ == "__main__" and train_once:
     vae_train_data, vae_scaler = VAE_merge_data_per_timestep(train_paths, expected_cols, target_rows)
 
     # Load expected colums of test data excluding time
-    df_test = pd.read_csv(test_path).drop(columns='Unnamed: 0')
-    df_val = pd.read_csv(val_path).drop(columns='Unnamed: 0')
+    df_test = pd.read_csv(test_path)
+    df_val = pd.read_csv(val_path)
     df_test = df_test[expected_cols]
     df_val = df_val[expected_cols]
 
@@ -175,13 +175,13 @@ if __name__ == "__main__" and optimizing:
 
     target_rows = 1200
     batch_size = 40
-    n_calls_per_sample = 12
+    n_calls_per_sample = 10
     feature_level_data_base_path = r"VAE_AE_DATA"
     all_paths = glob.glob(feature_level_data_base_path + "/*.csv")
     n_filepaths = len(all_paths)
 
     df_sample1 = pd.read_csv(all_paths[0])
-    expected_cols = ['Energy_Variance','Energy_Mean','Energy_P13','Counts_Variance','Energy_P10','Duration_Variance']
+    expected_cols = ['Counts_Variance','Energy_P10','Duration_Variance']
     num_features = len(expected_cols)
     Training_his = []
     Testing_his = []
@@ -238,8 +238,8 @@ if __name__ == "__main__" and optimizing:
         vae_train_data, vae_scaler = VAE_merge_data_per_timestep(train_paths, expected_cols, target_rows)
 
         # Load expected colums of test data excluding time
-        df_test = pd.read_csv(test_path).drop(columns='Unnamed: 0')
-        df_val = pd.read_csv(val_path).drop(columns='Unnamed: 0')
+        df_test = pd.read_csv(test_path)
+        df_val = pd.read_csv(val_path)
         #expected_cols = ['Amplitude', 'Energy', 'Counts', 'Duration', 'RMS']
         df_test = df_test[expected_cols]
         df_val = df_val[expected_cols]

@@ -39,7 +39,7 @@ def plot_training_run(val_sample, test_sample, base_dir="DCEC_Training_Output"):
         3: 'orange',
         4: 'purple'}
 
-    fig, axs = plt.subplots(3, 4, figsize=(24, 18))
+    fig, axs = plt.subplots(5, 2, figsize=(18, 24))
     axs = axs.flatten()
 
     for i, file in enumerate(training_files):
@@ -59,19 +59,40 @@ def plot_training_run(val_sample, test_sample, base_dir="DCEC_Training_Output"):
                 color=cluster_colors.get(cluster, 'black')
             )
 
-        ax.set_title(f"Training Sample {training_samples[i]}")
+        ax.text(
+            0.1, 0.9, f"Sample {i+1}",
+            transform=ax.transAxes,
+            fontsize=12,
+            verticalalignment='top',
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
+
         ax.set_xlabel("Time")
         ax.set_ylabel("Cumulative AE Hits")
         ax.grid(True)
 
     # Shared legend below the plots
-    handles = [plt.Line2D([0], [0], color=color, label=f"Cluster {c}") for c, color in cluster_colors.items()]
-    fig.legend(handles, [f"Cluster {c}" for c in cluster_colors.keys()],
-               loc='lower center', ncol=3, fontsize='large', frameon=False)
+    # handles = [plt.Line2D([0], [0], color=color, label=f"Cluster {c}") for c, color in cluster_colors.items()]
+    # fig.legend(handles, [f"Cluster {c}" for c in cluster_colors.keys()],
+    #            loc='lower center', ncol=5, fontsize='large', frameon=False)
+    #
+    plt.tight_layout(rect=[0, 0.02, 1, 1])  # Leave space at bottom for legend
 
-    plt.tight_layout(rect=[0, 0.05, 1, 1])  # Leave space at bottom for legend
+    import matplotlib.ticker as ticker
+
+    ax = plt.gca()  # get current axis
+    formatter = ticker.ScalarFormatter(useMathText=True)
+    formatter.set_scientific(True)
+    formatter.set_powerlimits((-3, 3))  # force scientific notation for all ranges
+    ax.xaxis.set_major_formatter(formatter)
+    ax.yaxis.set_major_formatter(formatter)
+
+    for ax in axs:
+        ax.xaxis.set_major_formatter(formatter)
+        ax.yaxis.set_major_formatter(formatter)
+
+    plt.savefig("DCEC final training results")
     plt.show()
 
 
-# Runs the training plots for the model which had validation sample 1 and test sample 2
-plot_training_run(val_sample=1, test_sample=2)
+# Runs the training plots for the model which had validation sample ... and test sample ...
+plot_training_run(val_sample=11, test_sample=12)
