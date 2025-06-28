@@ -6,7 +6,11 @@ from scipy.stats import pearsonr
 from sklearn.preprocessing import Normalizer
 from itertools import zip_longest
 import pandas as pd
+<<<<<<< HEAD
+from scipy.signal import resample_poly 
+=======
 from scipy.signal import resample_poly
+>>>>>>> cb9353d6a1cc3d4bb01f84e2f91c4605808e57f0
 
 def Tr(X):
     """
@@ -169,25 +173,13 @@ def fitness(X, Mo_a=1.0, Tr_b=1.0, Pr_c=1.0):
 
     return ftn, monotonicity, trendability, prognosability, error
 
-# List of your folders
-# folders = [
-#     # r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\feature extractrerd\C01_main\Extracted Features\EMD_Features_interpolated_500_500_CSV",
-#     #r"C:\Users\attil\OneDrive\TU_Delft\C01_main\Extracted Features\FFT_Features_interpolated500_500_CSV"
-#     #r"C:\Users\attil\OneDrive\TU_Delft\C01_main\Extracted Features\EMD_Features_interpolated_500_500_CSV"
-#     r"C:\Users\attil\OneDrive\TU_Delft\C01_main\Extracted Features\STFT_Features_interpolated_500_500_CSV"
-#     #r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\feature extractrerd\C01_main\Extracted Features\FFT_Features_interpolated500_500_CSV",
-#     #r"C:\Users\bgorn\OneDrive - Delft University of Technology\Bureaublad\feature extractrerd\C01_main\Extracted Features\STFT_Features_interpolated_500_500_CSV"
-# ]
-
-directory=r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\FFT"
-os.makedirs(directory, exist_ok=True)
-# Dictionary to store trendability results
-trendability_results = {}
-
-# Target resample length
-target_length = 400
-
-def run(input_dir, output_dir):
+def reshape(input_dir, output_dir):
+    if any(os.path.isfile(os.path.join(output_dir, f)) for f in os.listdir(output_dir)):
+        for filename in os.listdir(output_dir):
+            file_path = os.path.join(output_dir, filename)
+            if os.path.isfile(file_path):
+                os.remove(file_path) 
+    print(f"Reshaping {os.path.basename(input_dir)}") 
     os.makedirs(output_dir, exist_ok=True)
     for root, dir, samples in os.walk(input_dir):
         for sample in samples: 
@@ -202,57 +194,12 @@ def run(input_dir, output_dir):
                     new_df=pd.concat([new_df, df[column]], axis=1)
                     new_df.to_csv(filepath, index=False)
 
-def run0(input_dir, output_dir):
-    for root, dir, samples in os.walk(input_dir):
-        for sample in samples: 
-            # data = np.genfromtxt(file_path, delimiter=',')
-            df=pd.read_csv(os.path.join(root, sample))
-            df.dropna()
-
-            df= df.iloc[:, 1:]  # Drop first row and column
-            M,N= df.shape
-            Z=int(N/6)
-            features=df.columns.to_list()[1:Z+1]
-            features=[i[i.index('_')+1:] for i in features]
-            print(sample) 
-            for i in range(Z):
-                dir=os.path.join(output_dir, f"{features[i]}.csv") 
-                if not os.path.exists(dir):
-                    new_df=pd.DataFrame()
-                else:
-                    new_df=pd.read_csv(dir)
-                current_df=pd.DataFrame()
-                loclist= np.arange(i, Z*5+i+1, Z)
-                for loc in loclist:
-                    current_df= pd.concat([current_df, df.iloc[:, loc]], axis=1)
-                resampled_data = resample(current_df.T, target_length, axis=1)
-                if new_df.shape==(0,0):
-                    new_df=pd.DataFrame(resampled_data)
-                else:
-                    new_df=pd.DataFrame(np.vstack([resampled_data, new_df.to_numpy()]))
-
-
-                # standard_columns = list(range(target_length))  # or your preferred list of column names
-
-                # # Assign these columns explicitly to both DataFrames
-                # current_df = current_df.reindex(columns=standard_columns)
-                # new_df = new_df.reindex(columns=standard_columns)
-
-                # print(new_df.columns)
-                # new_df=pd.concat([new_df, current_df], axis=0, ignore_index=True)
-                new_df.dropna()
-                new_df.to_csv(dir, index=False) 
-# Summary
-#print("\nTrendability Results Summary:")
-# for folder, score in trendability_results.items():
-# print(f"{os.path.basename(folder)}: {score:.4f}")
-
-def run2(dirname):
+def calculate_fitness(dirname):
     mpts=[]
     for dir, root, files in os.walk(dirname): 
-        print(dir)
+        print(f"Calculating fitness for {os.path.basename(dirname)}")
         for file in files:
-            print(file) 
+            print(file[:-4]) 
             filepath=os.path.join(dir, file)
             df=pd.read_csv(filepath).dropna()
             df=df.drop(df.columns[0], axis=1)
@@ -267,81 +214,117 @@ def run2(dirname):
             # print(f"Trendability score: {trendability_score:.4f}")
             # print(f"Monotonicity score: {monotonicity_score:.4f}")
             # print(f"Prognosability score: {prognosability_score:.4f}")
-            mpts.append([trendability_score, monotonicity_score, prognosability_score])
-    return mpts
+            mpts.append([trendability_score, monotonicity_score, prognosability_score, file[:-4]])
+    return mpts 
+
+def plot_bar(fitness_list, column):
+    feature_list = np.arange(len(fitness_list))
+
+    #If you want to display the feature names on the x-axis 
+    #feature_list = [feat[4] for feat in fitness_list]
+
+    trendability = [feat[0] for feat in fitness_list]
+    monotonicity = [feat[1] for feat in fitness_list]
+    prognosability = [feat[2] for feat in fitness_list]
+
+    total_heights = [t + m + p for t, m, p in zip(trendability, monotonicity, prognosability)]
+    mu = np.mean(total_heights)
 
 
-# mpt1= run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\CWT")
-# mpt2= run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\EMD")
-# mpt3= run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\FFT")
-mpt4= run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\Hilbert")
-print(mpt4)
-mpt5= run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\SPWVD")
-print("\n\n\n\n")
-print(mpt5) 
-# mpt6= run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\STFT")
-# mpt7= run2(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\Time")
- 
-def plot_bar_chart(mpt):#, mpt2, mpt3):
-    """
-    Plots a simple bar chart from a list of bar heights.
+    # X locations
+    x = np.arange(len(fitness_list))
 
-    Parameters:
-        bar_heights (list of numbers): The height of each bar.
-        title (str): Title of the chart.
-        xlabel (str): Label for the x-axis.
-        ylabel (str): Label for the y-axis.
-        show_values (bool): Whether to show the value of each bar on top.
-    """
-    x_mpt = list(range(len(mpt)))  # 0 to len(mpt)-1
-    x_mpt2 = list(range(len(mpt), len(mpt) + len(mpt2)))  # continue from where mpt left off
-    x_mpt3 = list(range(len(mpt) + len(mpt2), len(mpt) + len(mpt2) + len(mpt3)))  # continue after mpt2
+    # Plotting
+    fig, ax = plt.subplots(figsize=(14, 6))
+    bar_width=0.4 
 
-    # Concatenate all x positions and heights for labeling
-    all_x = x_mpt + x_mpt2 + x_mpt3
-    #all_labels = list(range(len(all_x)))  # Labels from 0 to total number of bars - 1
-    all_labels = list(range(len(mpt)))  # Labels from 0 to len(mpt)-1
-    # Plot each group separately with different colors
-    plt.bar(x_mpt, mpt, color='red', label='FFT')
-    # plt.bar(x_mpt2, mpt2, color='blue', label='EMD')
-    # plt.bar(x_mpt3, mpt3, color='green', label='STFT')
+    ax.bar(x, prognosability, width=bar_width, label='Prognosability', color='lightgreen')
+    ax.bar(x, monotonicity, width=bar_width, bottom=prognosability, label='Monotonicity', color='salmon')
+    bottom_stack = [p + m for p, m in zip(prognosability, monotonicity)]
+    ax.bar(x, trendability, width=bar_width, bottom=bottom_stack, label='Trendability', color='skyblue')
 
-    # Add number labels to x-axis
-    plt.xticks(x_mpt, all_labels, rotation=90)
-    #all_values = mpt + mpt2 + mpt3
-    mean_score = np.mean(mpt)
+    ax.axhline(mu, color='black', linestyle='--', linewidth=1.5, label=f'μ = {mu:.2f}')
+    ax.text(len(x) - 0.2, mu -0.05, 'μ', color='red', fontsize=16, va='bottom')
 
-    # Draw horizontal dashed line at the average
-    plt.axhline(y=mean_score, color='black', linestyle='--', label=f'Average ({mean_score:.2f})')
-    plt.text(len(all_x), mean_score + 0.02, 'μ', fontsize=12, color='red')
-    # Optional aesthetics
-    plt.xlabel('Statistical Features')
-    plt.ylabel('Fitness Score')
-    plt.ylim(0, 3)
-    plt.title('Fitness Score Plot')
-    plt.legend()
+    # Formatting
+    ax.set_xlim(-0.5, len(x) - 0.3)
+    ax.set_xticks(x)
+    ax.set_xticklabels(feature_list, rotation=90, ha='center') 
+    ax.set_ylabel('Fitness Score')
+    ax.set_xlabel('Feature Index')
+    ax.set_title(f'{column} Feature Scores')
+    ax.set_ylim(0, 3)
+    ax.legend()
+
     plt.tight_layout()
     plt.show()
 
-#plot_bar_chart(mpt)#, mpt2, mpt3)
-#from sklearn.preprocessing import MinMaxScaler
+    return mu
 
-#file=r"C:\Users\attil\OneDrive\TU_Delft\C01_main\Output\FFT_new_features_500_500_CSV\Sample01.csv"
-# file=r"C:\Users\attil\OneDrive\TU_Delft\C01_main\Extracted_Features\Time_Domain_Interpolated_Features_500_500_CSV\Sample01.csv"
-# df=pd.read_csv(file) 
-# for column in df.columns[1:]:
-#     data=df[column].to_numpy()
-#     print(data)
-#     if np.min(data) < 0 or np.max(data) > 1:
-#         scaler = MinMaxScaler()
-#         data = scaler.fit_transform(data.reshape(-1, 1)).flatten()
-#     plt.scatter(df.iloc[:, 0], data, label=column)
-#     plt.xlabel('Time (cycle)')
-#     plt.ylabel(column)  
-#     plt.ylim(-1,1)
-#     plt.legend()
-#     plt.show()
+def write_scores(dir, column, fitness_scores):
+    df=pd.read_csv(dir)
+    if df.empty:
+        df = pd.DataFrame(index=range(len(fitness_scores)), columns=df.columns)
+    df[column] = np.nan
+    df[column] = df[column].astype(object)
+    df.loc[df.index[:len(fitness_scores)], column] = pd.Series(fitness_scores, index=df.index[:len(fitness_scores)], dtype='object')
+    df.dropna()
+    df.to_csv(dir, index=False) 
 
+# def run0(input_dir, output_dir):
+#     Target resample length
+#     target_length = 400 
+#     for root, dir, samples in os.walk(input_dir):
+#         for sample in samples: 
+#             # data = np.genfromtxt(file_path, delimiter=',')
+#             df=pd.read_csv(os.path.join(root, sample))
+#             df.dropna()
+
+#             df= df.iloc[:, 1:]  # Drop first row and column
+#             M,N= df.shape
+#             Z=int(N/6)
+#             features=df.columns.to_list()[1:Z+1]
+#             features=[i[i.index('_')+1:] for i in features]
+#             print(sample) 
+#             for i in range(Z):
+#                 dir=os.path.join(output_dir, f"{features[i]}.csv") 
+#                 if not os.path.exists(dir):
+#                     new_df=pd.DataFrame()
+#                 else:
+#                     new_df=pd.read_csv(dir)
+#                 current_df=pd.DataFrame()
+#                 loclist= np.arange(i, Z*5+i+1, Z)
+#                 for loc in loclist:
+#                     current_df= pd.concat([current_df, df.iloc[:, loc]], axis=1)
+#                 resampled_data = resample(current_df.T, target_length, axis=1)
+#                 if new_df.shape==(0,0):
+#                     new_df=pd.DataFrame(resampled_data)
+#                 else:
+#                     new_df=pd.DataFrame(np.vstack([resampled_data, new_df.to_numpy()]))
+
+
+#                 standard_columns = list(range(target_length))  # or your preferred list of column names
+
+#                 #Assign these columns explicitly to both DataFrames
+#                 current_df = current_df.reindex(columns=standard_columns)
+#                 new_df = new_df.reindex(columns=standard_columns)
+
+#                 print(new_df.columns)
+#                 new_df=pd.concat([new_df, current_df], axis=0, ignore_index=True)
+#                 new_df.dropna()
+#                 new_df.to_csv(dir, index=False) 
+
+#run(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\Extracted_Features\SPWVD_Features_500_500_CSV", r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\SPWVD")
+
+# mpt1= calculate_fitness(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\CWT")
+# mpt2= calculate_fitness(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\EMD")
+# mpt3= calculate_fitness(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\column")
+# mpt4= calculate_fitness(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\Hilbert")
+# mpt5= calculate_fitness(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\SPWVD")
+# mpt6= calculate_fitness(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\STFT")
+# mpt7= calculate_fitness(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\HIs\Time") 
+ 
+ #Backup storage
 # vars={"CWT":mpt1,
 #       "EMD":mpt2,
 #       "FFT":mpt3,
@@ -350,12 +333,21 @@ def plot_bar_chart(mpt):#, mpt2, mpt3):
 #       "STFT":mpt6,
 #       "Time":mpt7}
 
-# with open(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\output.txt", "w") as f:
-#     f.write(str(vars))
+# # with open(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\output.txt", "w") as f:
+# #     f.write(str(vars))
 
+#In order to create the entire file 
 # outputdir=r"C:\Users\attil\OneDrive\TU_Delft\C01_main"
 # os.makedirs(outputdir, exist_ok=True)
 # cols=['CWT', 'EMD','FFT', 'Hilbert', 'SPWVD', 'STFT', 'Time'] 
 # data = list(zip_longest(mpt1, mpt2, mpt3, mpt4, mpt5, mpt6, mpt7))
 # df = pd.DataFrame(data, columns=cols)
 # df.to_csv(os.path.join(outputdir, 'fitness_scores.csv'), index=False) 
+
+#In order to adjust specific columns
+# df=pd.read_csv(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\fitness_scores.csv")
+# df['SPWVD'] = np.nan
+# df['SPWVD'] = df['SPWVD'].astype(object)
+# df.loc[df.index[:len(mpt5)], 'SPWVD'] = pd.Series(mpt5, index=df.index[:len(mpt5)], dtype='object')
+# df.dropna()
+# df.to_csv(r"C:\Users\attil\OneDrive\TU_Delft\C01_main\fitness_scores.csv", index=False)
