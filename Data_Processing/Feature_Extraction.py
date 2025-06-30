@@ -245,7 +245,7 @@ def extract_frequency_statistical_features(cycle_length, input_dir, output_dir):
             #rows=math.ceil(endval["Endval"].iloc[int(sample[6:8])-1] / cycle_length)
             #print(rows) 
             #cycles=np.linspace(rows/len(df['Frequency (Hz)']), df['Frequency (Hz)'].iloc[-1], rows-1)  
-            df.insert(0, "Time (cycle)", df["bucket"]*cycle_length+1)
+            df.insert(0, "Time (cycle)", (df["bucket"]+1)*cycle_length)
             df.drop(columns=["bucket"], inplace=True) 
             end_val=math.ceil(df["Time (cycle)"].iloc[-1] / cycle_length) * cycle_length 
             cycles=np.arange(cycle_length, end_val+1, cycle_length) 
@@ -277,7 +277,7 @@ def extract_frequency_statistical_features(cycle_length, input_dir, output_dir):
 
             #features_df.insert(0, "Time (cycle)", cycles) 
             #features_df=features_df.dropna()
-            csv_filename = os.path.join(output_dir, f"{sample[6:8]}.csv")
+            csv_filename = os.path.join(output_dir, f"{sample[:-4]}.csv")
             features_df.insert(0, "Time (cycle)", cycles)
             features_df.to_csv(csv_filename, index=False)   
 
@@ -323,7 +323,7 @@ def extract_time_frequency_statistical_features(input_dir, output_dir):
             print("Processing: ", sample)
             
             df = pd.read_csv(file) 
-            cycles=df["Frequency (Hz)"].to_numpy()
+            cycles=df["Time (cycle)"].to_numpy()
             cycles=sorted(list(set(cycles)))
             prev_index=-1
 
@@ -338,8 +338,8 @@ def extract_time_frequency_statistical_features(input_dir, output_dir):
             os.makedirs(output_dir, exist_ok=True) 
 
             for cycle in cycles:
-                current_row=[]
-                index=df["Frequency (Hz)"][df["Frequency (Hz)"]<=cycle].index[-1] 
+                current_row=[]# Ensure unique time values
+                index=df["Time (cycle)"][df["Time (cycle)"]<=cycle].index[-1] 
                 for column in df.iloc[:, 2:]: 
                     try:
                         current_row.append(time_frequency_domain_features(df[column][prev_index+1:index+1].to_numpy().flatten()))
@@ -351,7 +351,7 @@ def extract_time_frequency_statistical_features(input_dir, output_dir):
                 #print(features_df)
                 prev_index=index
 
-            features_df.insert(0, "Frequency (Hz)", cycles) 
+            features_df.insert(0, "Time (cycle)", cycles) 
             csv_filename = os.path.join(output_dir, f"{sample[:-4]}.csv")
             features_df.to_csv(csv_filename, index=False)   
 

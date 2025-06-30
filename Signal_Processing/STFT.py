@@ -21,7 +21,7 @@ def perform_stft(input_dir, output_dir, window='hann', nperseg=500, noverlap=250
             # Drop 'Time' column if present
             time_array = df['Time (cycle)'].to_numpy()
             df = df.drop(columns=['Time (cycle)'])
-            
+
             results = {}
             stft_results = {}
 
@@ -34,23 +34,23 @@ def perform_stft(input_dir, output_dir, window='hann', nperseg=500, noverlap=250
                 # Save the results in the results dictionary
                 results[column] = (f, t, np.abs(Zxx))
                 # Flatten the STFT magnitudes and save for CSV output
-                stft_results[column] = np.ravel(np.abs(Zxx).transpose())
+                stft_results[column] = np.ravel(np.abs(Zxx))
 
             # Flatten the frequency bins (f) and times (t) as columns
-            #frequency_bins = np.tile(f, len(t))  # Repeat frequency bins for each time step
-            #time_bins = np.repeat(t, len(f))  # Repeat time bins for each frequency
-
-            time_bins = np.tile(t, len(f))  
-            frequency_bins = np.repeat(f, len(t))  # Repeat frequency bins for each time step
+            frequency_bins = np.tile(f, len(t))  # Repeat frequency bins for each time step
+            time_bins = np.repeat(t, len(f))  # Repeat time bins for each frequency
+            
+            #time_bins = np.tile(t, len(f))  
+            #frequency_bins = np.repeat(f, len(t))  # Repeat frequency bins for each time step
             # Create the output DataFrame
             stft_df = pd.DataFrame(stft_results)
 
             # Add the frequency and time bins to the DataFrame
             stft_df['Frequency (Hz)'] = frequency_bins
-            stft_df['Time (s)'] = time_bins
+            stft_df['Time (cycle)'] = time_bins
 
             # Reorder the columns for better readability
-            columns_order = ['Frequency (Hz)', 'Time (s)'] + [col for col in df.columns]
+            columns_order = ['Time (cycle)', 'Frequency (Hz)'] + [col for col in df.columns]
             stft_df = stft_df[columns_order]
 
             # Save the results to a CSV file
@@ -64,7 +64,7 @@ def perform_stft(input_dir, output_dir, window='hann', nperseg=500, noverlap=250
                     plt.figure(figsize=(10, 6))
                     plt.pcolormesh(t, f, 20 * np.log10(np.abs(Zxx)), shading='gouraud')
                     plt.title('STFT of Amplitude')
-                    plt.xlabel('Time (s)')
+                    plt.xlabel('Time (cycle)')
                     plt.ylabel('Frequency (Hz)')
                     plt.colorbar(label='Log Magnitude (dB)')
                     plt.grid(True)

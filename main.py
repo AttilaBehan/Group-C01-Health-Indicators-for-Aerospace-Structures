@@ -10,7 +10,7 @@ import pandas as pd
 
 def main(): 
     """
-    Main function to execute the signal processing pipeline.
+    Main function to run the signal processing, feature extraction and fitness scoring pipeline.
     """
     # Absolute path of the current file
     directory = Path(__file__).resolve().parent
@@ -24,24 +24,31 @@ def main():
     csv_interpolated_dir         = directory / "Output" / ("Low_Features_Interpolated_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")  
     time_domain_dir              = directory / "Output"/ ("Time_Domain_Features_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")  
     time_domain_interpolated_dir = directory / "Output" / ("Time_Domain_Interpolated_Features_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")  
+    time_domain_extracted_features_dir = directory / "Extracted_Features" / ("Time_Domain_Interpolated_Features_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")  
     FFT_dir              = directory / "Output" / ("FFT_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")
     FFT_features_dir     = directory / "Output" / ("FFT_Features_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")  
     FFT_features_interpolated_dir = directory / "Output" / ("FFT_Features_interpolated_"+str(wavelength)+"_"+str(cycle_length)+"_CSV") 
+    FFT_extracted_features_dir = directory / "Extracted_Features" / ("FFT_Features_interpolated_"+str(wavelength)+"_"+str(cycle_length)+"_CSV") 
     STFT_dir             = directory / "Output" / ("STFT_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")  
     STFT_features_dir    = directory / "Output" / ("STFT_Features_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")  
     STFT_features_interpolated_dir = directory / "Output" / ("STFT_Features_interpolated_"+str(wavelength)+"_"+str(cycle_length)+"_CSV") 
+    STFT_extracted_features_dir = directory / "Extracted_Features" / ("STFT_Features_interpolated_"+str(wavelength)+"_"+str(cycle_length)+"_CSV") 
     EMD_dir              = directory / "Output" / ("EMD_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")  
     EMD_features_dir     = directory / "Output" / ("EMD_Features_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")  
     EMD_features_interpolated_dir = directory / "Output" / ("EMD_Features_interpolated_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")
+    EMD_extracted_features_dir = directory / "Extracted_Features" / ("EMD_Features_interpolated_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")
     SPWVD_dir            = directory / "Output" / ("SPWVD1_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")  
     SPWVD_transformed_dir = directory / "Output" / ("SPWVD_Transformed_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")  
     SPWVD_features_dir   = directory / "Output" / ("SPWVD_Features_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")  
+    SPWVD_extracted_features_dir = directory / "Extracted_Features" / ("SPWVD_Features_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")  
     Hilbert_dir          = directory / "Output" / ("Hilbert_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")  
     Hilbert_features_dir = directory / "Output" / ("Hilbert_Features_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")  
     Hilbert_features_interpolated_dir = directory / "Output" / ("Hilbert_Features_interpolated_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")
+    Hilbert_extracted_features_dir = directory / "Extracted_Features" / ("Hilbert_Features_interpolated_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")
     CWT_dir              = directory / "Output" / ("CWT_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")  
     CWT_features_dir     = directory / "Output" / ("CWT_Features_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")  
     CWT_features_interpolated_dir = directory / "Output" / ("CWT_Features_interpolated_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")   
+    CWT_extracted_features_dir = directory / "Extracted_Features" / ("CWT_Features_interpolated_"+str(wavelength)+"_"+str(cycle_length)+"_CSV")   
 
     print("----------Main Menu----------") 
     print("Cycle Length: ", cycle_length)
@@ -78,7 +85,7 @@ def main():
         print("4. SPWVD")
         print("5. Hilbert")
         print("6. CWT") 
-        choice=int(input("Enter your choice (1-6): "))
+        choice=int(input("Enter your choice (1-6): ")) 
         if choice == 1:
             FFT.perform_fft(cycle_length, csv_dir, FFT_dir)  
         elif choice == 2: 
@@ -128,19 +135,20 @@ def main():
         print("4. Interpolate Hilbert")
         print("5. Interpolate CWT") 
         print("6. Interpolate Time")
-        choice=int(input("Enter your choice (1-2): "))
-        if choice==1:
-            interpolate.get_missing_cycles(FFT_features_dir, FFT_features_interpolated_dir, 'Time (cycle)', cycle_length)
-        elif choice == 2:
-            interpolate.get_missing_cycles(STFT_features_dir,STFT_features_interpolated_dir, 'Frequency (Hz)', 0.004)
-        elif choice == 3:
-            interpolate.get_missing_cycles(EMD_features_dir, EMD_features_interpolated_dir, 'Time (cycle)', cycle_length)
-        elif choice == 4:
-            interpolate.get_missing_cycles(Hilbert_features_dir, Hilbert_features_interpolated_dir, 'Time (cycle)', cycle_length)
-        elif choice == 5:
-            interpolate.get_missing_cycles(CWT_features_dir, CWT_features_interpolated_dir, 'Time (cycle)', cycle_length)
-        elif choice == 6:
-            interpolate.get_missing_cycles(time_domain_dir, time_domain_interpolated_dir, 'Time (cycle)', cycle_length)
+        options=[[FFT_features_dir, FFT_features_interpolated_dir],[STFT_features_dir,STFT_features_interpolated_dir],[EMD_features_dir, EMD_features_interpolated_dir],[Hilbert_features_dir, Hilbert_features_interpolated_dir],[CWT_features_dir, CWT_features_interpolated_dir],[time_domain_dir, time_domain_interpolated_dir]]
+        while True:
+            try:
+                choice=int(input("Enter your choice (1-6): "))
+                if choice in range(1,7): 
+                    if not options[choice-1][0].exists():
+                        print(f"Directory {options[choice-1][0]} does not exist or is empty. Please run the previous steps first.")
+                        break
+                    interpolate.get_missing_cycles(options[choice-1][0], options[choice-1][1], 'Time (cycle)', cycle_length)
+                    break
+                else:
+                    print("Invalid choice. Please enter a number between 1 and 6.")
+            except ValueError:
+                print("Invalid input. Please enter a number between 1 and 6.") 
     elif choice == 6:
         print("1. FFT fitness score")
         print("2. STFT fitness score")
@@ -149,45 +157,27 @@ def main():
         print("5. Hilbert fitness score")
         print("6. CWT fitness score")
         print("7. Time fitness score")
-        choice=int(input("Enter your choice (1-6): "))
         dir=directory / "Fitness_scores.csv"
+        #options=[[FFT_features_interpolated_dir, directory/"HIs"/"FFT"],[STFT_features_interpolated_dir, directory/"HIs"/"STFT"],[EMD_features_interpolated_dir, directory / "HIs" / "EMD"],[SPWVD_features_dir, directory / "HIs" / "SPWVD"],[Hilbert_features_interpolated_dir, directory / "HIs" / "Hilbert"],[CWT_features_interpolated_dir, directory / "HIs" / "CWT"], [time_domain_interpolated_dir, directory / "HIs" / "Time"]]
+        options=[[FFT_extracted_features_dir, directory / "HIs" / "FFT"],[STFT_extracted_features_dir, directory / "HIs" / "STFT"],[EMD_extracted_features_dir, directory / "HIs" / "EMD"],[SPWVD_extracted_features_dir, directory / "HIs" / "SPWVD"],[Hilbert_extracted_features_dir, directory / "HIs" / "Hilbert"],[CWT_extracted_features_dir, directory / "HIs" / "CWT"],[time_domain_extracted_features_dir, directory / "HIs" / "Time"]]
         if not dir.exists():
             df = pd.DataFrame(columns=["FFT", "STFT", "EMD","SPWVD", "Hilbert", "Time"])  # Customize columns as needed
             df.to_csv(dir, index=False)
-        if choice == 1:
-            fitness.reshape(FFT_features_interpolated_dir, directory/"HIs"/"FFT")
-            fitness_scores=fitness.calculate_fitness(directory/"HI"/"FFT")
-            fitness.plot_bar(fitness_scores, "FFT") 
-            fitness.write_scores(dir, "FFT", fitness_scores) 
-        elif choice == 2: 
-            fitness.reshape(STFT_features_interpolated_dir, directory/"HIs"/"STFT")
-            fitness_scores=fitness.calculate_fitness(directory/"HI"/"STFT")
-            fitness.plot_bar(fitness_scores, "STFT") 
-            fitness.write_scores(dir, "STFT", fitness_scores) 
-        elif choice == 3: 
-            fitness.reshape(EMD_features_interpolated_dir, directory / "HIs" / "EMD")
-            fitness_scores = fitness.calculate_fitness(directory / "HI" / "EMD")
-            fitness.plot_bar(fitness_scores, "EMD")
-            fitness.write_scores(dir, "EMD", fitness_scores)
-        elif choice == 4:
-            fitness.reshape(SPWVD_features_dir, directory / "HIs" / "SPWVD")
-            fitness_scores = fitness.calculate_fitness(directory / "HIs" / "SPWVD")
-            fitness.plot_bar(fitness_scores, "SPWVD")
-            fitness.write_scores(dir, "SPWVD", fitness_scores)
-        elif choice == 5:
-            fitness.reshape(Hilbert_features_interpolated_dir, directory / "HIs" / "Hilbert")
-            fitness_scores = fitness.calculate_fitness(directory / "HIs" / "Hilbert")
-            fitness.plot_bar(fitness_scores, "Hilbert")
-            fitness.write_scores(dir, "Hilbert", fitness_scores)
-        elif choice == 6:
-            fitness.reshape(CWT_features_interpolated_dir, directory / "HIs" / "CWT")
-            fitness_scores = fitness.calculate_fitness(directory / "HIs" / "CWT")
-            fitness.plot_bar(fitness_scores, "CWT")
-            fitness.write_scores(dir, "CWT", fitness_scores)
-        elif choice == 7:
-            fitness.reshape(time_domain_interpolated_dir, directory / "HIs" / "Time")
-            fitness_scores = fitness.calculate_fitness(directory / "HIs" / "Time")
-            fitness.plot_bar(fitness_scores, "Time")
-            fitness.write_scores(dir, "Time", fitness_scores)
+        while True:
+            try:
+                choice=int(input("Enter your choice (1-7): "))
+                if choice in range(1,8): 
+                    if not options[choice-1][0].exists():
+                        print(f"Directory {options[choice-1][0]} does not exist or is empty. Please run the previous steps first.")
+                        break
+                    fitness.reshape(options[choice-1][0], options[choice-1][1])
+                    fitness_scores=fitness.calculate_fitness(options[choice-1][1])
+                    fitness.plot_bar(fitness_scores, options[choice-1][1].name) 
+                    fitness.write_scores(dir, options[choice-1][1].name, fitness_scores) 
+                    break
+                else:
+                    print("Invalid choice. Please enter a number between 1 and 7.")
+            except ValueError:
+                print("Invalid input. Please enter a number between 1 and 7.") 
     main()
 main()
