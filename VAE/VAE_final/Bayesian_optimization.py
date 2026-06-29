@@ -179,8 +179,6 @@ def VAE_objective(params, batch_size, target_rows, num_features):
         epochs, reloss_coeff, klloss_coeff, moloss_coeff, hidden_2, target_rows, num_features
     )
     hi_all = np.vstack((hi_train, hi_test, hi_val))
-    if hi_test.shape[1] == 1:
-        hi_test = np.tile(hi_test, (1, -1))  
     ftn, monotonicity, trendability, prognosability, error = fitness(hi_all)
     print(f"Error: {error}")
     return error

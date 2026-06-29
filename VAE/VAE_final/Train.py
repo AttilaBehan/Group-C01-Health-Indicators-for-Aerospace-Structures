@@ -53,7 +53,12 @@ def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coef
     """
     with tf.GradientTape() as tape:
         x_recon, mean, logvar, z = vae(batch_xs, training=True)
-        health = compute_health_indicator(batch_xs, x_recon, target_rows, num_features)
+        # NOTE: pass target_rows/num_features by keyword. Passing them positionally
+        # made the 3rd positional arg (k, the HI sensitivity) equal to target_rows
+        # (~1200) during training while evaluation used the default k=1.0, so the
+        # health indicator — and therefore the monotonicity loss — was computed on a
+        # completely different scale in training vs. evaluation.
+        health = compute_health_indicator(batch_xs, x_recon, target_rows=target_rows, num_features=num_features)
         loss = vae_loss(batch_xs, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
     
     gradients = tape.gradient(loss, vae.trainable_variables)
@@ -77,7 +82,7 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
 
     vae = VAE(target_rows, num_features, hidden_1, hidden_2)
     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    train_dataset = tf.data.Dataset.from_tensor_slices(sample_data).batch(batch_size, drop_remainder=True)
+    train_dataset = tf.data.Dataset.from_tensor_slices(sample_data).batch(batch_size, drop_remainder=False)
     val_dataset = tf.data.Dataset.from_tensor_slices(val_data).batch(1, drop_remainder=False)
     test_dataset = tf.data.Dataset.from_tensor_slices(test_data).batch(1, drop_remainder=False)
 
@@ -89,9 +94,18 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
 
     epoch_losses = []
     for epoch in range(epochs):
-        loss = train_step(vae, sample_data, optimizer, reloss_coeff, klloss_coeff, moloss_coeff, target_rows, num_features)
-        epoch_losses.append(loss.numpy())
-        
+        # Iterate over the mini-batches so that batch_size actually affects training.
+        # Previously the whole sample_data tensor was passed in a single train_step
+        # call, so train_dataset/batch_size were never used (full-batch gradient
+        # descent regardless of the optimized batch_size). drop_remainder=False
+        # guarantees at least one batch even when batch_size > number of sequences.
+        batch_losses = []
+        for batch_xs in train_dataset:
+            loss = train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coeff, target_rows, num_features)
+            batch_losses.append(loss.numpy())
+        loss = np.mean(batch_losses) if batch_losses else np.nan
+        epoch_losses.append(loss)
+
         if epoch % display == 0:
             print(f'Epoch {epoch}, Loss = {loss}')
         x_recon_val, mean_val, logvar_val, z = vae(val_data, training=False)
@@ -244,7 +258,7 @@ def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data,
 
         # Load expected colums of test data excluding time
         df_test = pd.read_csv(test_path).drop(columns=[])
-        df_val = pd.read_csv(val_path).drop(columns='')
+        df_val = pd.read_csv(val_path).drop(columns=[])
         #expected_cols = ['Amplitude', 'Energy', 'Counts', 'Duration', 'RMS']
         df_test = df_test[expected_cols]
         df_val = df_val[expected_cols]
@@ -253,29 +267,29 @@ def train_optimized_VAE(csv_folde_path, opt_hyperparam_filepath, vae_train_data,
         df_val_resampled = resample_dataframe(df_val, target_rows)
 
         # If using old MERGE_DATA - Row major order flattening into 1D array (Row1, Row2, Row3... successive), then reshapes to go from one row to one column
-        vae_test_data = df_test_resampled.values()
-        vae_val_data = df_val_resampled.values()
+        vae_test_data = df_test_resampled.values
+        vae_val_data = df_val_resampled.values
 
         # Standardize val and test data
         vae_test_data = vae_scaler.transform(vae_test_data)
         vae_val_data = vae_scaler.transform(vae_val_data)
 
-        # Train VAE
-        hi_train, hi_test, hi_val, vae, epoch_losses, train_test_val_losses = VAE_train(vae_train_data, vae_val_data, vae_test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, num_features, hidden_2, target_rows)
+        # Train VAE (arg order must match VAE_train: ..., moloss_coeff, hidden_2, target_rows, num_features)
+        hi_train, hi_test, hi_val, vae, epoch_losses, train_test_val_losses = VAE_train(vae_train_data, vae_val_data, vae_test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, hidden_2, target_rows, num_features)
 
         # Generate HI's for trained VAE
         x_recon_val, mean_val, logvar_val, z = vae(vae_val_data, training=False)
-        val_health = compute_health_indicator(vae_val_data, x_recon_val, target_rows, num_features).numpy()
+        val_health = compute_health_indicator(vae_val_data, x_recon_val, target_rows=target_rows, num_features=num_features).numpy()
         val_loss = vae_loss(vae_val_data, x_recon_val, mean_val, logvar_val, val_health,
                             reloss_coeff, klloss_coeff, moloss_coeff).numpy()
-        
+
         x_recon_test, mean_test, logvar_test, z = vae(vae_test_data, training=False)
-        test_health = compute_health_indicator(vae_test_data, x_recon_test, target_rows, num_features).numpy()
+        test_health = compute_health_indicator(vae_test_data, x_recon_test, target_rows=target_rows, num_features=num_features).numpy()
         test_loss = vae_loss(vae_test_data, x_recon_test, mean_test, logvar_test, test_health,
                             reloss_coeff, klloss_coeff, moloss_coeff).numpy()
-        
+
         x_recon_train, mean_train, logvar_train, z = vae(vae_train_data, training=False)
-        train_health = compute_health_indicator(vae_train_data, x_recon_train, target_rows, num_features).numpy()
+        train_health = compute_health_indicator(vae_train_data, x_recon_train, target_rows=target_rows, num_features=num_features).numpy()
         train_loss = vae_loss(vae_train_data, x_recon_train, mean_train, logvar_train, train_health,
                             reloss_coeff, klloss_coeff, moloss_coeff).numpy()
         

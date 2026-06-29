@@ -72,8 +72,8 @@ def main():
         except ValueError:
             print("Invalid input. Please enter a number between 0 and 15.") 
 
-    if choice == 0: 
-        return 
+    if choice == 0:
+        return "exit"
     elif choice == 1:
         extract.load_mat(input_dir, csv_dir) 
     elif choice == 2:
@@ -161,7 +161,7 @@ def main():
         #options=[[FFT_features_interpolated_dir, directory/"HIs"/"FFT"],[STFT_features_interpolated_dir, directory/"HIs"/"STFT"],[EMD_features_interpolated_dir, directory / "HIs" / "EMD"],[SPWVD_features_dir, directory / "HIs" / "SPWVD"],[Hilbert_features_interpolated_dir, directory / "HIs" / "Hilbert"],[CWT_features_interpolated_dir, directory / "HIs" / "CWT"], [time_domain_interpolated_dir, directory / "HIs" / "Time"]]
         options=[[FFT_extracted_features_dir, directory / "HIs" / "FFT"],[STFT_extracted_features_dir, directory / "HIs" / "STFT"],[EMD_extracted_features_dir, directory / "HIs" / "EMD"],[SPWVD_extracted_features_dir, directory / "HIs" / "SPWVD"],[Hilbert_extracted_features_dir, directory / "HIs" / "Hilbert"],[CWT_extracted_features_dir, directory / "HIs" / "CWT"],[time_domain_extracted_features_dir, directory / "HIs" / "Time"]]
         if not dir.exists():
-            df = pd.DataFrame(columns=["FFT", "STFT", "EMD","SPWVD", "Hilbert", "Time"])  # Customize columns as needed
+            df = pd.DataFrame(columns=["FFT", "STFT", "EMD", "SPWVD", "Hilbert", "CWT", "Time"])  # Customize columns as needed
             df.to_csv(dir, index=False)
         while True:
             try:
@@ -178,6 +178,11 @@ def main():
                 else:
                     print("Invalid choice. Please enter a number between 1 and 7.")
             except ValueError:
-                print("Invalid input. Please enter a number between 1 and 7.") 
-    main()
-main()
+                print("Invalid input. Please enter a number between 1 and 7.")
+
+
+# Loop the menu iteratively (previously main() called itself recursively after
+# every action, growing the call stack for the lifetime of the session).
+while True:
+    if main() == "exit":
+        break
