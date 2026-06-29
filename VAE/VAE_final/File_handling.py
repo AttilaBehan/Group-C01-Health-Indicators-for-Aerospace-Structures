@@ -48,12 +48,12 @@ def VAE_merge_data_per_timestep(sample_filenames, expected_cols, target_rows):
 
     # Stack time steps from all samples
     data = np.vstack(all_data)  # shape = (12 * target_rows, n_features)
-    print(f"✅ Merged data shape: {data.shape}")
+    print(f"[OK] Merged data shape: {data.shape}")
 
     # Standardize feature-wise (column-wise)
     scaler = StandardScaler()
     data_scaled = scaler.fit_transform(data)
-    print(f"✅ Data standardized, mean: {data_scaled.mean(axis=0)}, std: {data_scaled.std(axis=0)}")
+    print(f"[OK] Data standardized, mean: {data_scaled.mean(axis=0)}, std: {data_scaled.std(axis=0)}")
 
     return data_scaled, scaler
 

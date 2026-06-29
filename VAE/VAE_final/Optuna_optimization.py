@@ -32,17 +32,17 @@ def optimize_hyperparameters_optuna(
         hidden_2 = trial.suggest_int('hidden_2',8,32)
         batch_size = trial.suggest_int('batch_size',100,1000)
 
-        # Train VAE with these params
-        hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(target_rows,
+        # Train VAE with these params (arg order must match VAE_train's signature)
+        hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(
             vae_train_data, vae_val_data, vae_test_data,
             hidden_1, batch_size, learning_rate, epochs,
             reloss_coeff, klloss_coeff, moloss_coeff,
-            num_features, hidden_2=hidden_2,
+            hidden_2, target_rows, num_features,
             )
 
-        # Compute fitness error on stacked health indicators
-        hi_all = np.vstack((hi_train, hi_test, hi_val))
-        _, _, _, _, error = fitness(hi_all)
+        # De-leaked selection metric: TRAIN + VAL HIs only (never the test panel).
+        hi_opt = np.vstack((hi_train, hi_val))
+        _, _, _, _, error = fitness(hi_opt)
         trial.report(error, step=0)
         return error
 
@@ -143,4 +143,4 @@ def VAE_optimize_hyperparameters_optuna(folder_save_opt_param_csv, expected_cols
     # Save results in df (save list of tuples in df with 3 cols) -> save df to csv file
     df_out = pd.DataFrame(results, columns=["test_panel_id", "params", "error"])
     df_out.to_csv(os.path.join(folder_save_opt_param_csv, "hyperparameters-opt-samples.csv"))
-    print(f"\n✅ Saved best parameters to {os.path.join(folder_save_opt_param_csv, 'hyperparameters-opt-samples.csv')}")
+    print(f"\n[OK] Saved best parameters to {os.path.join(folder_save_opt_param_csv, 'hyperparameters-opt-samples.csv')}")
