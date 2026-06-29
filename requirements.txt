@@ -1,0 +1,22 @@
+# Core dependencies for the VAE health-indicator pipeline (VAE/VAE_final/Main.py)
+# and the fitness/feature scoring. Pinned to the versions verified to run the
+# pipeline end-to-end. Install into the project .venv (see README/run notes).
+numpy==2.1.3        # TF 2.19 requires numpy<2.2.0 (the global numpy 2.4.x was the broken one)
+pandas==2.2.3
+scipy==1.17.1
+scikit-learn==1.6.1
+matplotlib==3.9.0
+tensorflow==2.19.0
+scikit-optimize==0.10.2
+optuna==4.3.0
+tqdm==4.67.1
+
+# --- Optional: only needed to regenerate features from the raw .mat via main.py
+#     (the signal-processing pipeline). The VAE run does NOT need these because
+#     VAE/VAE_final/VAE_AE_DATA/ already contains the processed feature CSVs.
+# mat73
+# PyWavelets
+# emd
+
+# --- Optional: only needed for the DCEC damage-classification track (DCEC/).
+# torch
