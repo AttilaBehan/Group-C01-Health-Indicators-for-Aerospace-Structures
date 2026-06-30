@@ -31,6 +31,7 @@ def optimize_hyperparameters_optuna(
         #these are added hyperparameters, these can be removed if necessary
         hidden_2 = trial.suggest_int('hidden_2',8,32)
         batch_size = trial.suggest_int('batch_size',100,1000)
+        trloss_coeff = trial.suggest_float('trloss_coeff', 0.0, 5.0)
 
         # Train VAE with these params (arg order must match VAE_train's signature)
         hi_train, hi_test, hi_val, vae, epoch_losses, losses = VAE_train(
@@ -38,6 +39,7 @@ def optimize_hyperparameters_optuna(
             hidden_1, batch_size, learning_rate, epochs,
             reloss_coeff, klloss_coeff, moloss_coeff,
             hidden_2, target_rows, num_features,
+            trloss_coeff=trloss_coeff,
             )
 
         # De-leaked selection metric: TRAIN + VAL HIs only (never the test panel).

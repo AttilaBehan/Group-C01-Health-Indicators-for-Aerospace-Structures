@@ -38,7 +38,7 @@ from File_handling import resample_dataframe, VAE_merge_data_per_timestep
 #     # Weight update using gradients (zip(gradients, trainable_variables) pairs grads with weights and optimizer applies rule)
 #     optimizer.apply_gradients(zip(gradients, vae.trainable_variables))
 #     return loss
-def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coeff, target_rows, num_features):
+def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coeff, target_rows, num_features, trloss_coeff=0.0):
     """
     Training VAE step with gradient clipping.
 
@@ -59,7 +59,7 @@ def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coef
         # health indicator — and therefore the monotonicity loss — was computed on a
         # completely different scale in training vs. evaluation.
         health = compute_health_indicator(batch_xs, x_recon, target_rows=target_rows, num_features=num_features)
-        loss = vae_loss(batch_xs, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff)
+        loss = vae_loss(batch_xs, x_recon, mean, logvar, health, reloss_coeff, klloss_coeff, moloss_coeff, trloss_coeff)
     
     gradients = tape.gradient(loss, vae.trainable_variables)
 
@@ -71,7 +71,7 @@ def train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coef
 
 
 ''' Apply the train_step() function to train the VAE'''
-def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, hidden_2, target_rows, num_features=6, patience=50, min_delta=1e-4):
+def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_rate, epochs, reloss_coeff, klloss_coeff, moloss_coeff, hidden_2, target_rows, num_features=6, patience=50, min_delta=1e-4, trloss_coeff=0.0):
     klloss_coeff = klloss_coeff / hidden_2
     random.seed(VAE_Seed.vae_seed)
     tf.random.set_seed(VAE_Seed.vae_seed)
@@ -101,7 +101,7 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
         # guarantees at least one batch even when batch_size > number of sequences.
         batch_losses = []
         for batch_xs in train_dataset:
-            loss = train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coeff, target_rows, num_features)
+            loss = train_step(vae, batch_xs, optimizer, reloss_coeff, klloss_coeff, moloss_coeff, target_rows, num_features, trloss_coeff)
             batch_losses.append(loss.numpy())
         loss = np.mean(batch_losses) if batch_losses else np.nan
         epoch_losses.append(loss)
@@ -110,8 +110,8 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
             print(f'Epoch {epoch}, Loss = {loss}')
         x_recon_val, mean_val, logvar_val, z = vae(val_data, training=False)
         val_health = compute_health_indicator(val_data, x_recon_val, target_rows=target_rows, num_features=num_features).numpy()
-        val_loss = vae_loss(val_data, x_recon_val, mean_val, logvar_val, val_health, reloss_coeff, klloss_coeff, moloss_coeff)
-      
+        val_loss = vae_loss(val_data, x_recon_val, mean_val, logvar_val, val_health, reloss_coeff, klloss_coeff, moloss_coeff, trloss_coeff)
+
         if val_loss < (best_val_loss - min_delta):
             best_val_loss = val_loss
             epochs_without_improvement = 0
@@ -132,7 +132,7 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
         val_health = compute_health_indicator(val_batch, x_recon_val, target_rows=target_rows, num_features=num_features).numpy()
         hi_val.append(val_health)
         val_loss_batch = vae_loss(val_batch, x_recon_val, mean_val, logvar_val, val_health,
-                                  reloss_coeff, klloss_coeff, moloss_coeff)
+                                  reloss_coeff, klloss_coeff, moloss_coeff, trloss_coeff)
         val_losses.append(val_loss_batch.numpy())
     val_loss = np.mean(val_losses) if val_losses else np.nan
     hi_val = np.array(hi_val).reshape(-1, target_rows) if hi_val else np.array([])
@@ -147,7 +147,7 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
         train_health = compute_health_indicator(train_batch, x_recon_train, target_rows=target_rows, num_features=num_features).numpy()
         hi_train.append(train_health)
         train_loss_batch = vae_loss(train_batch, x_recon_train, mean_train, logvar_train, train_health,
-                                    reloss_coeff, klloss_coeff, moloss_coeff)
+                                    reloss_coeff, klloss_coeff, moloss_coeff, trloss_coeff)
         train_losses.append(train_loss_batch.numpy())
     train_loss = np.mean(train_losses) if train_losses else np.nan
     hi_train = np.array(hi_train).reshape(-1, target_rows) if hi_train else np.array([])
@@ -162,7 +162,7 @@ def VAE_train(sample_data, val_data, test_data, hidden_1, batch_size, learning_r
         test_health = compute_health_indicator(test_batch, x_recon_test, target_rows=target_rows, num_features=num_features).numpy()
         hi_test.append(test_health)
         test_loss_batch = vae_loss(test_batch, x_recon_test, mean_test, logvar_test, test_health,
-                                   reloss_coeff, klloss_coeff, moloss_coeff)
+                                   reloss_coeff, klloss_coeff, moloss_coeff, trloss_coeff)
         test_losses.append(test_loss_batch.numpy())
     test_loss = np.mean(test_losses) if test_losses else np.nan
     hi_test = np.array(hi_test).reshape(-1, target_rows) if hi_test else np.array([])

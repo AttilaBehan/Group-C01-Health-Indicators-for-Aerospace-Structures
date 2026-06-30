@@ -60,14 +60,21 @@ from Bayesian_optimization import VAE_optimize_hyperparameters
 DATA_DIR = os.path.join(HERE, "VAE_AE_DATA")      # one CSV per panel
 RESULTS_DIR = os.path.join(HERE, "vae_results")   # all outputs go here
 
-MODE = "fixed"        # "fixed" (fast, reproducible) or "optimize" (slow search)
-QUICK_RUN = True     # True -> tiny/fast smoke test (NOT for reporting)
+MODE = "optimize"        # "fixed" (fast, reproducible) or "optimize" (slow search)
+QUICK_RUN = False     # True -> tiny/fast smoke test (NOT for reporting)
 
 # Features fed to the VAE (must exist as columns in every VAE_AE_DATA CSV).
 EXPECTED_COLS = ["Counts_Variance", "Energy_P10", "Duration_Variance"]
+# NOTE: BATCH_SIZE must be >= the number of training panels (~10) so that every
+# training batch contains all panels -- the trendability term is computed *across*
+# the HIs in a batch, so a batch with one panel cannot enforce cross-panel trend.
 BATCH_SIZE = 40
 
 # Hyperparameters used in MODE="fixed" (and as a documented default).
+# trloss_coeff weights the cross-panel TRENDABILITY term (see Loss_function.py).
+# The term is internally scaled by target_rows so this stays a portable O(1) knob:
+# ~1.5 was validated to lift held-out trendability ~30x; push higher to favour
+# cross-panel consistency, lower to favour reconstruction (tune it).
 DEFAULT_HP = dict(
     hidden_1=72,
     learning_rate=0.005,
@@ -76,6 +83,7 @@ DEFAULT_HP = dict(
     reloss_coeff=0.05,
     klloss_coeff=1.6,
     moloss_coeff=2.5,
+    trloss_coeff=1.5,
 )
 
 # Bayesian search settings (MODE="optimize").
@@ -90,6 +98,7 @@ SEARCH_SPACE = [
     Real(0.02, 0.5, name="reloss_coeff"),
     Real(0.8, 2.0, name="klloss_coeff"),
     Real(0.8, 3.5, name="moloss_coeff"),
+    Real(0.0, 5.0, name="trloss_coeff"),
 ]
 
 if QUICK_RUN:
@@ -160,6 +169,7 @@ def load_hp_from_csv(path, n_expected):
             hidden_1=int(p[0]), learning_rate=float(p[1]), epochs=int(p[2]),
             hidden_2=int(p[3]), reloss_coeff=float(p[4]), klloss_coeff=float(p[5]),
             moloss_coeff=float(p[6]),
+            trloss_coeff=float(p[7]) if len(p) > 7 else 0.0,
         ))
     if len(hps) != n_expected:
         raise ValueError(f"Expected {n_expected} hyperparameter rows, got {len(hps)} in {path}")
@@ -225,6 +235,7 @@ def run_final_loocv(all_paths, per_fold_hp, expected_cols, target_rows,
             hp["hidden_1"], batch_size, hp["learning_rate"], hp["epochs"],
             hp["reloss_coeff"], hp["klloss_coeff"], hp["moloss_coeff"],
             hp["hidden_2"], target_rows, num_features,
+            trloss_coeff=hp.get("trloss_coeff", 0.0),
         )
 
         hi_train = np.asarray(hi_train).reshape(-1, target_rows)

@@ -162,9 +162,9 @@ def VAE_objective_with_data(params, batch_size, vae_train_data, vae_val_data, va
     hyperparameter selection — making every reported error optimistic.
 
     params order: [hidden_1, learning_rate, epochs, hidden_2,
-                   reloss_coeff, klloss_coeff, moloss_coeff]
+                   reloss_coeff, klloss_coeff, moloss_coeff, trloss_coeff]
     """
-    hidden_1, learning_rate, epochs, hidden_2, reloss_coeff, klloss_coeff, moloss_coeff = params
+    hidden_1, learning_rate, epochs, hidden_2, reloss_coeff, klloss_coeff, moloss_coeff, trloss_coeff = params
 
     # Normalise skopt's numpy scalar types to plain Python ints/floats.
     hidden_1 = int(hidden_1)
@@ -176,7 +176,7 @@ def VAE_objective_with_data(params, batch_size, vae_train_data, vae_val_data, va
 
     print(f"[{panel}] trying hidden_1={hidden_1}, lr={learning_rate:.5f}, epochs={epochs}, "
           f"hidden_2={hidden_2}, reloss={reloss_coeff:.3f}, klloss={klloss_coeff:.3f}, "
-          f"moloss={moloss_coeff:.3f}")
+          f"moloss={moloss_coeff:.3f}, trloss={trloss_coeff:.3f}")
 
     random.seed(VAE_Seed.vae_seed)
     tf.random.set_seed(VAE_Seed.vae_seed)
@@ -184,7 +184,8 @@ def VAE_objective_with_data(params, batch_size, vae_train_data, vae_val_data, va
 
     hi_train, hi_test, hi_val, vae, epoch_losses, train_test_val_losses = VAE_train(
         vae_train_data, vae_val_data, vae_test_data, hidden_1, batch_size, learning_rate,
-        epochs, reloss_coeff, klloss_coeff, moloss_coeff, hidden_2, target_rows, num_features
+        epochs, reloss_coeff, klloss_coeff, moloss_coeff, hidden_2, target_rows, num_features,
+        trloss_coeff=trloss_coeff
     )
 
     # De-leaked selection metric: train + validation HIs only.
